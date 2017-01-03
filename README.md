@@ -1,4 +1,5 @@
-# GetPESignInfo
+# FetchSignFromPE
+
 This program is used to get signature information from PE files which signed by a/some certificate(s). Supporting multi-signed &amp; cert-chain. Runned on Windows 7+ OS.
 
 This code uses CryptoAPI to parse the signature and certificate data from specified file, including .exe, .cat(catalog file), .dll, .sys, etc.
