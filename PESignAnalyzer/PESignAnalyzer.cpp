@@ -1,8 +1,10 @@
 /**
  * COPYRIGHT NOTICE & DESCRIPTION
+ *
+ * Source: PESignAnalyzer.cpp
  * Author: leeqwind
- * E-mail: leeqwind@outlook.com
- * Notice: TODO
+ * E-mail: leeqwind123@outlook.com
+ * Notice: <TODO>
  */
 
 #include <Windows.h>
