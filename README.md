@@ -62,3 +62,9 @@ digestAlgorithm: SHA256
 This code does not use the `WinVerifyTrust` to verify and get the signature and certificate information, but uses `CryptoAPI` instead.
 
 这份代码没有使用`WinVerifyTrust`来验证和获取签名证书信息，而是用`CrytoAPI`来代替。
+
+## Compile
+
+编译
+
+Developer can compile this program with Microsoft Visual Studio 2008 or later version Visual Studio versions.
