@@ -66,6 +66,7 @@ Developer can compile this program with Microsoft Visual Studio 2008 or later ve
 ## Multi-signatured Supporting
 
 多签名支持
+
 This code does not use the `WinVerifyTrust` to verify and get the signature and certificate information, but uses `CryptoAPI` instead.
 
 It might also be noted that this program supports analyzing multi-signatured PE file, even thought on the OS platforms not supporting multi-signature detection, such as Windows 7, Windows Vista, etc. Multi-signatured PE file means that this file has been signatured by more than one embedded signature certificate.
