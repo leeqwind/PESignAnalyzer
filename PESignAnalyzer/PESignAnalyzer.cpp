@@ -12,7 +12,6 @@
 #include <SoftPub.h>
 #include <strsafe.h>
 #include <WinCrypt.h>
-#include <atlconv.h>
 
 #include <math.h>
 #include <map>
@@ -25,6 +24,9 @@ using namespace std;
 #define MY_ENCODING (X509_ASN_ENCODING | PKCS_7_ASN_ENCODING)
 #ifndef szOID_RFC3161_counterSign
 #define szOID_RFC3161_counterSign "1.3.6.1.4.1.311.3.3.1"
+#endif
+#ifndef szOID_NESTED_SIGNATURE
+#define szOID_NESTED_SIGNATURE    "1.3.6.1.4.1.311.2.4.1"
 #endif
 
 #pragma comment(lib, "Crypt32.lib")
