@@ -70,3 +70,9 @@ This code does not use the `WinVerifyTrust` to verify and get the signature and 
 Developer can compile this program with Microsoft Visual Studio 2008 or later version Visual Studio. The target binary file will be built at Debug or Release folder, depending on which compiling method developers select.
 
 开发者可以通过Microsoft Visual Studio 2008或更新版本的Visual Studio来编译这个程序。目标二进制文件会在Debug或Release目录生成，这取决于开发者选择何种编译方式。
+
+## Muiti-signatured Supporting
+
+多签名支持
+
+It might also be noted that, this program supports analyzing multi-signatured PE file.
