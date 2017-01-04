@@ -19,6 +19,7 @@ signtype: cataloged
 catafile: C:\WINDOWS\system32\CatRoot\{F750E6C3-38EE-11D1-85E5-00C04FC295EE}\Microsoft-Windows-Client-Features-Package-AutoMerged-shell~31bf3856ad364e35~amd64~~10.0.14393.0.cat
 -----------------------
 [ The 1 Sign Info ]
+timestamp:       2016/07/16 17:45:27
 version:         V2
 digestAlgorithm: SHA256
  |---------------------
@@ -86,6 +87,7 @@ signtype: embedded
 catafile:
 -----------------------
 [ The 1 Sign Info ]
+timestamp:       2015/07/10 22:19:44
 version:         V2
 digestAlgorithm: SHA1
  |---------------------
@@ -120,6 +122,7 @@ digestAlgorithm: SHA1
  |- CRLpoint:
 -----------------------
 [ The 2 Sign Info ]
+timestamp:       2015/07/14 20:13:00
 version:         V2
 digestAlgorithm: SHA256
  |---------------------
@@ -154,6 +157,7 @@ digestAlgorithm: SHA256
  |- CRLpoint:
 -----------------------
 [ The 3 Sign Info ]
+timestamp:       2015/07/24 06:16:44
 version:         V2
 digestAlgorithm: SHA256
  |---------------------
@@ -188,6 +192,7 @@ digestAlgorithm: SHA256
  |- CRLpoint:
 -----------------------
 [ The 4 Sign Info ]
+timestamp:       2015/09/21 22:47:46
 version:         V2
 digestAlgorithm: SHA256
  |---------------------
