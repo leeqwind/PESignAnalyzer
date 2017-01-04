@@ -8,7 +8,7 @@ This code uses CryptoAPI to parse the signature and certificate data from specif
 
 这份代码使用CryptoAPI来解析指定文件中的签名和证书数据，包括exe，cat（catalog文件），dll，sys等格式文件。
 
-Running Demo
+## Running Demo
 
 运行演示
 
@@ -54,3 +54,11 @@ digestAlgorithm: SHA256
 -----------------------
 
 ```
+
+## Notice
+
+注意
+
+This code does not use the `WinVerifyTrust` to verify and get the signature and certificate information, but uses `CryptoAPI` instead.
+
+这份代码没有使用`WinVerifyTrust`来验证和获取签名证书信息，而是用`CrytoAPI`来代替。
