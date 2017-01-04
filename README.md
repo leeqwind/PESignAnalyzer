@@ -75,4 +75,6 @@ Developer can compile this program with Microsoft Visual Studio 2008 or later ve
 
 多签名支持
 
-It might also be noted that, this program supports analyzing multi-signatured PE file.
+It might also be noted that, this program supports analyzing multi-signatured PE file, even thought on the OS platforms not supporting multi-signature detection, such as Windows 7, Windows Vista, etc.
+
+需要注意的是，这个程序支持解析多签名的PE文件，即使是在诸如Windows 7，Windows Vista这种不支持多签名检测的操作系统平台上。
