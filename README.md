@@ -1,4 +1,4 @@
-# FetchSignFromPE
+# parse_pe_sign
 
 This program is used to get signature information from PE files which signed by a/some certificate(s). Supporting multi-signed &amp; cert-chain. Runned on Windows 7+ OS.
 
