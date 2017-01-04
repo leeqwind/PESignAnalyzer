@@ -71,11 +71,13 @@ This code does not use the `WinVerifyTrust` to verify and get the signature and 
 
 It might also be noted that this program supports analyzing multi-signatured PE file, even thought on the OS platforms not supporting multi-signature detection, such as Windows 7, Windows Vista, etc. Multi-signatured PE file means that this file has been signatured by more than one embedded signature certificate.
 
-If you transfer the path of a multi-signatured file to PESignAnalyzer binary file, it will show information as shown below. Every `[The X Sign Info]` means a chunk of completed information of a signature.
+If you transfer the path of a multi-signatured file to PESignAnalyzer binary file, it will show information as shown below. Every `[The X Sign Info]` means a chunk of completed information of a signature block.
 
 这份代码没有使用`WinVerifyTrust`来验证和获取签名证书信息，而是用`CryptoAPIs`来代替。
 
 需要注意的是，这个程序支持解析多签名的PE文件，即使是在诸如Windows 7，Windows Vista这种不支持多签名检测的操作系统平台上。多签名的PE文件意味着这个文件已经被多个嵌入式代码签名证书所签名了。
+
+如果你将一个多签名文件的路径作为参数传递给PESignAnalyzer的二进制文件，它会展示如下所示的信息。 每一个`[The X Sign Info]`意味着一个签名的完整信息。
 
 ```
 D:\GitHub\PESignAnalyzer\Debug>PESignAnalyzer_vs2013.exe D:\sign_samples\multi_sign\sample.sys
