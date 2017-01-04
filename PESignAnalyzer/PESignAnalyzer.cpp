@@ -95,6 +95,7 @@ BOOL CertificateCheck(const WCHAR *szCurrFullPath)
 			iter != signChain.end(); iter++)
 		{
 			std::cout << "[ The " << ++idx << " Sign Info ]" << endl;
+			std::cout << "timestamp:       " << iter->CounterSign.timeStamp << endl;
 			std::cout << "version:         " << iter->version << endl;
 			std::cout << "digestAlgorithm: " << iter->digestAlgorithm << endl;
 
