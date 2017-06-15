@@ -1,6 +1,6 @@
 # PESignAnalyzer
 
-This program is used to get signature information from PE files which signed by a/some embedded code signature certificate(s). Supporting multi-signed &amp; cert-chain. Runned on Windows Vista+ OS platform.
+This program is used to get signature information from PE files which signed by a/some embedded code signature certificate(s) on Windows. Supporting multi-signed file info and certificates chain. Runned on Windows Vista, Windows 7, or later OS platform.
 
 This code uses `CryptoAPIs` to parse the signature and certificate data from specified file, including .exe, .cat(catalog file), .dll, .sys, etc.
 
