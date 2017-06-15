@@ -56,7 +56,7 @@ digestAlgorithm: SHA256
 
 ```
 
-## Compile
+## Compiling
 
 编译
 
@@ -64,7 +64,7 @@ Developer can compile this program with Microsoft Visual Studio 2008 or later ve
 
 开发者可以通过Microsoft Visual Studio 2008或更新版本的Visual Studio来编译这个程序。目标二进制文件会在Debug或Release目录生成，这取决于开发者选择何种编译方式。
 
-## Multi-signatured Supporting
+## Multi-signed Supporting
 
 多签名支持
 
