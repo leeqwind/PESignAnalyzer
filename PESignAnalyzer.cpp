@@ -69,7 +69,7 @@ BOOL CheckFileDigitalSignature(LPCWSTR filePath, BOOL bNoRevocation,
     std::string & signType,
     std::list<SIGN_NODE_INFO> & signChain);
 
-BOOL CertificateCheck(const WCHAR *szCurrFullPath)
+BOOL CertificateCheck(CONST WCHAR *szCurrFullPath)
 {
     std::string     signType;
     std::wstring    cataFile;
@@ -83,42 +83,39 @@ BOOL CertificateCheck(const WCHAR *szCurrFullPath)
         signType,
         signChain);
     std::wcout << L"filepath: " << imagePath << endl;
-    if (bReturn)
-    {
-        std::cout  << "signtype: "  << signType << endl;
-        std::wcout << L"catafile: " << cataFile << endl;
-        std::cout  << "-----------------------" << endl;
-
-        UINT idx = 0;
-        std::list<SIGN_NODE_INFO>::iterator iter;
-        for (iter = signChain.begin(); iter != signChain.end(); iter++)
-        {
-            std::cout << "[ The " << ++idx << " Sign Info ]" << endl;
-            std::cout << "timestamp:       " << iter->CounterSign.timeStamp << endl;
-            std::cout << "version:         " << iter->version << endl;
-            std::cout << "digestAlgorithm: " << iter->digestAlgorithm << endl;
-
-            std::list<CERT_NODE_INFO>::iterator iter1;
-            for (iter1 = iter->CertNodeChain.begin();
-                iter1 != iter->CertNodeChain.end(); iter1++)
-            {
-                std::cout  <<  " |--"  << "-------------------" << endl;
-                std::cout  <<  " |- "  <<  "subject:       " << iter1->subjectName << endl;
-                std::cout  <<  " |- "  <<  "issuer:        " << iter1->issuerName << endl;
-                std::cout  <<  " |- "  <<  "serial:        " << iter1->serial << endl;
-                std::cout  <<  " |- "  <<  "thumbprint:    " << iter1->thumbprint << endl;
-                std::cout  <<  " |- "  <<  "signAlgorithm: " << iter1->signAlgorithm << endl;
-                std::cout  <<  " |- "  <<  "version:       " << iter1->version << endl;
-                std::cout  <<  " |- "  <<  "notbefore:     " << iter1->notbefore << endl;
-                std::cout  <<  " |- "  <<  "notafter:      " << iter1->notafter << endl;
-                std::wcout << L" |- "  << L"CRLpoint:      " << iter1->CRLpoint << endl;
-            }
-            std::cout << "-----------------------" << endl;
-        }
-    }
-    else
+    if (!bReturn)
     {
         std::cout << "signtype: " << "none" << endl;
+        return FALSE;
+    }
+    std::cout  << "signtype: "  << signType << endl;
+    std::wcout << L"catafile: " << cataFile << endl;
+    std::cout  << "-----------------------" << endl;
+    UINT idx = 0;
+    std::list<SIGN_NODE_INFO>::iterator iter;
+    for (iter = signChain.begin(); iter != signChain.end(); iter++)
+    {
+        std::cout << "[ The " << ++idx << " Sign Info ]" << endl;
+        std::cout << "timestamp:       " << iter->CounterSign.timeStamp << endl;
+        std::cout << "version:         " << iter->version << endl;
+        std::cout << "digestAlgorithm: " << iter->digestAlgorithm << endl;
+
+        std::list<CERT_NODE_INFO>::iterator iter1;
+        for (iter1 = iter->CertNodeChain.begin();
+            iter1 != iter->CertNodeChain.end(); iter1++)
+        {
+            std::cout  <<  " |--"  << "-------------------" << endl;
+            std::cout  <<  " |- "  <<  "subject:       " << iter1->subjectName << endl;
+            std::cout  <<  " |- "  <<  "issuer:        " << iter1->issuerName << endl;
+            std::cout  <<  " |- "  <<  "serial:        " << iter1->serial << endl;
+            std::cout  <<  " |- "  <<  "thumbprint:    " << iter1->thumbprint << endl;
+            std::cout  <<  " |- "  <<  "signAlgorithm: " << iter1->signAlgorithm << endl;
+            std::cout  <<  " |- "  <<  "version:       " << iter1->version << endl;
+            std::cout  <<  " |- "  <<  "notbefore:     " << iter1->notbefore << endl;
+            std::cout  <<  " |- "  <<  "notafter:      " << iter1->notafter << endl;
+            std::wcout << L" |- "  << L"CRLpoint:      " << iter1->CRLpoint << endl;
+        }
+        std::cout << "-----------------------" << endl;
     }
     return TRUE;
 }
@@ -134,10 +131,7 @@ BOOL MyCryptMsgGetParam(HCRYPTMSG hCryptMsg, DWORD dwParamType,
         return FALSE;
     }
     // Get size
-    if (!CryptMsgGetParam(hCryptMsg, dwParamType,
-        dwIndex,
-        NULL,
-        &dwSize))
+    if (!CryptMsgGetParam(hCryptMsg, dwParamType, dwIndex, NULL, &dwSize))
     {
         return FALSE;
     }
@@ -148,10 +142,7 @@ BOOL MyCryptMsgGetParam(HCRYPTMSG hCryptMsg, DWORD dwParamType,
         return FALSE;
     }
     // Get data to alloced memory
-    if (!CryptMsgGetParam(hCryptMsg, dwParamType,
-        dwIndex,
-        *pParam,
-        &dwSize))
+    if (!CryptMsgGetParam(hCryptMsg, dwParamType, dwIndex, *pParam, &dwSize))
     {
         return FALSE;
     }
@@ -168,11 +159,11 @@ typedef struct _SIGNDATA_HANDLE {
     PCMSG_SIGNER_INFO pSignerInfo;
 } SIGNDATA_HANDLE, *PNESTED_HANDLE;
 
-const UCHAR SG_ProtoCoded[] = {
+CONST UCHAR SG_ProtoCoded[] = {
     0x30, 0x82,
 };
 
-const UCHAR SG_SignedData[] = {
+CONST UCHAR SG_SignedData[] = {
     0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x07, 0x02,
 };
 
@@ -607,13 +598,13 @@ BOOL GetGeneralizedTimeStamp(PCMSG_SIGNER_INFO pSignerInfo, std::string & timeSt
     SYSTEMTIME  sst, lst;
     FILETIME    fft, lft;
 
-    ULONG wYear;
-    ULONG wMonth;
-    ULONG wDay;
-    ULONG wHour;
-    ULONG wMinute;
-    ULONG wSecond;
-    ULONG wMilliseconds;
+    ULONG wYear         = 0;
+    ULONG wMonth        = 0;
+    ULONG wDay          = 0;
+    ULONG wHour         = 0;
+    ULONG wMinute       = 0;
+    ULONG wSecond       = 0;
+    ULONG wMilliseconds = 0;
 
     for (n = 0; n < pSignerInfo->UnauthAttrs.cAttr; n++)
     {
@@ -637,10 +628,10 @@ BOOL GetGeneralizedTimeStamp(PCMSG_SIGNER_INFO pSignerInfo, std::string & timeSt
         return FALSE;
     }
     PBYTE pbOctetString = &(pSignerInfo->UnauthAttrs.rgAttr[n].rgValue[0].pbData[dwPositionFound]);
-    if (!ParseDERFindType(0x18, pbOctetString,
-        dwLengthFound,
+    if (!ParseDERFindType(0x18, pbOctetString, dwLengthFound,
         dwPositionFound,
-        dwLengthFound, dwPositionError, iTypeError))
+        dwLengthFound,
+        dwPositionError, iTypeError))
     {
         return FALSE;
     }
@@ -653,14 +644,13 @@ BOOL GetGeneralizedTimeStamp(PCMSG_SIGNER_INFO pSignerInfo, std::string & timeSt
         &wDay,
         &wHour,
         &wMinute,
-        &wSecond,
-        &wMilliseconds);
-    sst.wYear = (WORD)wYear;
-    sst.wMonth = (WORD)wMonth;
-    sst.wDay = (WORD)wDay;
-    sst.wHour = (WORD)wHour;
-    sst.wMinute = (WORD)wMinute;
-    sst.wSecond = (WORD)wSecond;
+        &wSecond, &wMilliseconds);
+    sst.wYear         = (WORD)wYear;
+    sst.wMonth        = (WORD)wMonth;
+    sst.wDay          = (WORD)wDay;
+    sst.wHour         = (WORD)wHour;
+    sst.wMinute       = (WORD)wMinute;
+    sst.wSecond       = (WORD)wSecond;
     sst.wMilliseconds = (WORD)wMilliseconds;
     SystemTimeToFileTime(&sst, &fft);
     FileTimeToLocalFileTime(&fft, &lft);
@@ -677,7 +667,8 @@ int IsCharacterToStrip(int character)
 void StripString(std::string & stringArg)
 {
     stringArg.erase(remove_if(stringArg.begin(), stringArg.end(),
-        IsCharacterToStrip), stringArg.end());
+        IsCharacterToStrip),
+        stringArg.end());
 }
 
 BOOL GetStringFromCertContext(PCCERT_CONTEXT pCertContext,
@@ -1008,9 +999,9 @@ BOOL GetSignerCertificateInfo(LPCWSTR filename, std::list<SIGN_NODE_INFO> & sign
         PCCERT_CONTEXT      pCurrContext   = NULL;
         LPCSTR              szObjId        = NULL;
         PCMSG_SIGNER_INFO   pCounterSigner = NULL;
-        CERT_NODE_INFO      CertNodeInfo   = { 0 };
-        SIGN_NODE_INFO      SignNodeInfo   = { 0 };
-        CERT_INFO           CertInfo       = { 0 };
+        CERT_INFO           CertInfo;
+        CERT_NODE_INFO      CertNodeInfo;
+        SIGN_NODE_INFO      SignNodeInfo;
 
         GetAuthedAttribute(iter->pSignerInfo);
         GetCounterSignerInfo(iter->pSignerInfo, &pCounterSigner);
@@ -1131,9 +1122,7 @@ BOOL MyCryptCalcFileHash(HANDLE FileHandle, PBYTE *szBuffer, DWORD *HashSize)
     }
     *HashSize = 0x00;
     // 获取哈希所需大小.
-    CryptCATAdminCalcHashFromFileHandle(FileHandle, HashSize,
-        NULL,
-        0x00);
+    CryptCATAdminCalcHashFromFileHandle(FileHandle, HashSize, NULL, 0x00);
     if (0 == *HashSize)
     {
         // 哈希为0意味着发生错误.
@@ -1142,9 +1131,7 @@ BOOL MyCryptCalcFileHash(HANDLE FileHandle, PBYTE *szBuffer, DWORD *HashSize)
     // 分配内存.
     *szBuffer = (PBYTE)calloc(*HashSize, 1);
     // 精确计算哈希值.
-    if (!CryptCATAdminCalcHashFromFileHandle(FileHandle, HashSize,
-        *szBuffer,
-        0x00))
+    if (!CryptCATAdminCalcHashFromFileHandle(FileHandle, HashSize, *szBuffer, 0x00))
     {
         free(*szBuffer);
         return FALSE;
