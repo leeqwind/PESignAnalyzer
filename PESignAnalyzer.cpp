@@ -86,7 +86,8 @@ BOOL CertificateCheck(
         NULL,
         cataFile,
         signType,
-        signChain);
+        signChain
+    );
     std::wcout << L"filepath: " << imagePath << endl;
     if (!bReturn)
     {
@@ -133,13 +134,15 @@ BOOL MyCryptMsgGetParam(
     DWORD *dwOutSize
 )
 {
+    BOOL  bReturn = FALSE;
+    DWORD dwSize  = 0;
     if (!pParam)
     {
         return FALSE;
     }
     // Get size
-    DWORD dwSize = 0;
-    if (!CryptMsgGetParam(hCryptMsg, dwParamType, dwIndex, NULL, &dwSize))
+    bReturn = CryptMsgGetParam(hCryptMsg, dwParamType, dwIndex, NULL, &dwSize);
+    if (!bReturn)
     {
         return FALSE;
     }
@@ -150,7 +153,8 @@ BOOL MyCryptMsgGetParam(
         return FALSE;
     }
     // Get data to alloced memory
-    if (!CryptMsgGetParam(hCryptMsg, dwParamType, dwIndex, *pParam, &dwSize))
+    bReturn = CryptMsgGetParam(hCryptMsg, dwParamType, dwIndex, *pParam, &dwSize);
+    if (!bReturn)
     {
         return FALSE;
     }
@@ -190,9 +194,9 @@ BOOL GetNestedSignerInfo(
 {
     BOOL        bReturn     = FALSE;
     HCRYPTMSG   hNestedMsg  = NULL;
-    DWORD       n           = 0x00;
     PBYTE       pbCurrData  = NULL;
     PBYTE       pbNextData  = NULL;
+    DWORD       n           = 0x00;
     DWORD       cbCurrData  = 0x00;
 
     if (!pSignerInfo)
@@ -204,8 +208,7 @@ BOOL GetNestedSignerInfo(
         // Traverse and look for a nested signature.
         for (n = 0; n < pSignerInfo->UnauthAttrs.cAttr; n++)
         {
-            if (lstrcmpA(pSignerInfo->UnauthAttrs.rgAttr[n].pszObjId,
-                szOID_NESTED_SIGNATURE) == 0)
+            if (lstrcmpA(pSignerInfo->UnauthAttrs.rgAttr[n].pszObjId, szOID_NESTED_SIGNATURE) == 0)
             {
                 break;
             }
@@ -213,6 +216,7 @@ BOOL GetNestedSignerInfo(
         // Cannot find a nested signature attribute.
         if (n >= pSignerInfo->UnauthAttrs.cAttr)
         {
+            bReturn = FALSE;
             __leave;
         }
         pbCurrData = pSignerInfo->UnauthAttrs.rgAttr[n].rgValue[0].pbData;
@@ -222,8 +226,7 @@ BOOL GetNestedSignerInfo(
         // gnature. Every nested signature exists side by side in an 8
         // bytes aligned way. According to the size of major signature
         // parse the nested signatures one by one.
-        while (pbCurrData > (BYTE *)pSignerInfo &&
-            pbCurrData < (BYTE *)pSignerInfo + cbSignerSize)
+        while (pbCurrData > (BYTE *)pSignerInfo && pbCurrData < (BYTE *)pSignerInfo + cbSignerSize)
         {
             SIGNDATA_HANDLE NestedHandle = { 0 };
             hNestedMsg = NULL;
@@ -242,7 +245,8 @@ BOOL GetNestedSignerInfo(
                 0,
                 0,
                 0,
-                NULL, 0);
+                NULL, 0
+            );
             if (!hNestedMsg)
             {
                 break; // Fatal Error
@@ -251,17 +255,20 @@ BOOL GetNestedSignerInfo(
             cbCurrData = XCH_WORD_LITEND(*(WORD *)(pbCurrData + 2)) + 4;
             pbNextData = pbCurrData;
             pbNextData += _8BYTE_ALIGN(cbCurrData, (ULONG_PTR)pbCurrData);
-            if (!CryptMsgUpdate(hNestedMsg, pbCurrData, cbCurrData, TRUE))
+            bReturn = CryptMsgUpdate(hNestedMsg, pbCurrData, cbCurrData, TRUE);
+            if (!bReturn)
             {
                 CryptMsgClose(hNestedMsg);
                 hNestedMsg = NULL;
                 pbCurrData = pbNextData;
                 continue;
             }
-            if (!MyCryptMsgGetParam(hNestedMsg, CMSG_SIGNER_INFO_PARAM,
+            bReturn = MyCryptMsgGetParam(hNestedMsg, CMSG_SIGNER_INFO_PARAM,
                 0,
                 (PVOID *)&NestedHandle.pSignerInfo,
-                &NestedHandle.dwObjSize))
+                &NestedHandle.dwObjSize
+            );
+            if (!bReturn)
             {
                 CryptMsgClose(hNestedMsg);
                 hNestedMsg = NULL;
@@ -272,16 +279,18 @@ BOOL GetNestedSignerInfo(
                 PKCS_7_ASN_ENCODING | X509_ASN_ENCODING,
                 0,
                 0,
-                hNestedMsg);
+                hNestedMsg
+            );
+            bReturn = TRUE;
             NestedChain.push_back(NestedHandle);
             CryptMsgClose(hNestedMsg);
             hNestedMsg = NULL;
             pbCurrData = pbNextData;
-            bReturn = TRUE;
         }
     }
     __finally
     {
+        bReturn = FALSE;
         if (hNestedMsg) CryptMsgClose(hNestedMsg);
     }
     return bReturn;
@@ -299,16 +308,16 @@ BOOL GetAuthedAttribute(
     {
         for (n = 0; n < pSignerInfo->AuthAttrs.cAttr; n++)
         {
-            if (lstrcmpA(pSignerInfo->AuthAttrs.rgAttr[n].pszObjId,
-                szOID_RSA_counterSign) == 0)
+            if (lstrcmpA(pSignerInfo->AuthAttrs.rgAttr[n].pszObjId, szOID_RSA_counterSign) == 0)
             {
+                bReturn = TRUE;
                 break;
             }
         }
-        bReturn = TRUE;
     }
     __finally
     {
+        bReturn = FALSE;
     }
     return bReturn;
 }
@@ -332,45 +341,53 @@ BOOL GetCounterSignerInfo(
         *pTargetSigner = NULL;
         for (n = 0; n < pSignerInfo->UnauthAttrs.cAttr; n++)
         {
-            if (lstrcmpA(pSignerInfo->UnauthAttrs.rgAttr[n].pszObjId,
-                szOID_RSA_counterSign) == 0)
+            if (lstrcmpA(pSignerInfo->UnauthAttrs.rgAttr[n].pszObjId, szOID_RSA_counterSign) == 0)
             {
                 break;
             }
         }
         if (n >= pSignerInfo->UnauthAttrs.cAttr)
         {
+            bReturn = FALSE;
             __leave;
         }
-        if (!CryptDecodeObject(MY_ENCODING,
+        bReturn = CryptDecodeObject(MY_ENCODING,
             PKCS7_SIGNER_INFO,
             pSignerInfo->UnauthAttrs.rgAttr[n].rgValue[0].pbData,
             pSignerInfo->UnauthAttrs.rgAttr[n].rgValue[0].cbData,
             0,
             NULL,
-            &dwObjSize))
+            &dwObjSize
+        );
+        if (!bReturn)
         {
+            bReturn = FALSE;
             __leave;
         }
         *pTargetSigner = (PCMSG_SIGNER_INFO)LocalAlloc(LPTR, dwObjSize);
         if (!*pTargetSigner)
         {
+            bReturn = FALSE;
             __leave;
         }
-        if (!CryptDecodeObject(MY_ENCODING,
+        bReturn = CryptDecodeObject(MY_ENCODING,
             PKCS7_SIGNER_INFO,
             pSignerInfo->UnauthAttrs.rgAttr[n].rgValue[0].pbData,
             pSignerInfo->UnauthAttrs.rgAttr[n].rgValue[0].cbData,
             0,
             (PVOID)*pTargetSigner,
-            &dwObjSize))
+            &dwObjSize
+        );
+        if (!bReturn)
         {
+            bReturn = FALSE;
             __leave;
         }
         bReturn = TRUE;
     }
     __finally
     {
+        bReturn = FALSE;
     }
     return bReturn;
 }
@@ -404,10 +421,10 @@ std::string TimeToString(
 }
 
 BOOL GetCounterSignerData(
-    PCMSG_SIGNER_INFO pSignerInfo,
-    std::string & signerName,
-    std::string & timeStamp,
-    std::string & emailAddr
+    PCMSG_SIGNER_INFO SignerInfo,
+    std::string & SignerName,
+    std::string & TimeStamp,
+    std::string & EmailAddr
 )
 {
     BOOL        bReturn = FALSE;
@@ -417,36 +434,36 @@ BOOL GetCounterSignerData(
     SYSTEMTIME  st;
 
     // 循环遍历认证属性并查找 szOID_RSA_signingTime OID.
-    for (n = 0; n < pSignerInfo->AuthAttrs.cAttr; n++)
+    for (n = 0; n < SignerInfo->AuthAttrs.cAttr; n++)
     {
-        if (lstrcmpA(pSignerInfo->AuthAttrs.rgAttr[n].pszObjId,
-            szOID_RSA_signingTime) == 0)
+        if (lstrcmpA(SignerInfo->AuthAttrs.rgAttr[n].pszObjId, szOID_RSA_signingTime) == 0)
         {
             break;
         }
     }
-    if (n >= pSignerInfo->AuthAttrs.cAttr)
+    if (n >= SignerInfo->AuthAttrs.cAttr)
     {
-        return bReturn;
+        return FALSE;
     }
     // 解码并获得 FILETIME 结构体.
     dwData = sizeof(ft);
-    if (!CryptDecodeObject(MY_ENCODING,
+    bReturn = CryptDecodeObject(MY_ENCODING,
         szOID_RSA_signingTime,
-        pSignerInfo->AuthAttrs.rgAttr[n].rgValue[0].pbData,
-        pSignerInfo->AuthAttrs.rgAttr[n].rgValue[0].cbData,
+        SignerInfo->AuthAttrs.rgAttr[n].rgValue[0].pbData,
+        SignerInfo->AuthAttrs.rgAttr[n].rgValue[0].cbData,
         0,
         (PVOID)&ft,
-        &dwData))
+        &dwData
+    );
+    if (!bReturn)
     {
-        return bReturn;
+        return FALSE;
     }
     // 转换成本地时间.
     FileTimeToLocalFileTime(&ft, &lft);
     FileTimeToSystemTime(&lft, &st);
-    timeStamp = TimeToString(NULL, &st);
-    bReturn = TRUE;
-    return bReturn;
+    TimeStamp = TimeToString(NULL, &st);
+    return TRUE;
 }
 
 BOOL SafeToReadNBytes(
@@ -638,6 +655,7 @@ BOOL GetGeneralizedTimeStamp(
     std::string & TimeStamp
 )
 {
+    BOOL        bReturn         = FALSE;
     DWORD       dwPositionFound = 0;
     DWORD       dwLengthFound   = 0;
     DWORD       dwPositionError = 0;
@@ -656,8 +674,7 @@ BOOL GetGeneralizedTimeStamp(
 
     for (n = 0; n < pSignerInfo->UnauthAttrs.cAttr; n++)
     {
-        if (lstrcmpA(pSignerInfo->UnauthAttrs.rgAttr[n].pszObjId,
-            szOID_RFC3161_counterSign) == 0)
+        if (lstrcmpA(pSignerInfo->UnauthAttrs.rgAttr[n].pszObjId, szOID_RFC3161_counterSign) == 0)
         {
             break;
         }
@@ -666,20 +683,26 @@ BOOL GetGeneralizedTimeStamp(
     {
         return FALSE;
     }
-    if (!ParseDERFindType(0x04,
+    bReturn = ParseDERFindType(0x04,
         pSignerInfo->UnauthAttrs.rgAttr[n].rgValue[0].pbData,
         pSignerInfo->UnauthAttrs.rgAttr[n].rgValue[0].cbData,
         dwPositionFound,
         dwLengthFound,
-        dwPositionError, iTypeError))
+        dwPositionError,
+        iTypeError
+    );
+    if (!bReturn)
     {
         return FALSE;
     }
     PBYTE pbOctetString = &(pSignerInfo->UnauthAttrs.rgAttr[n].rgValue[0].pbData[dwPositionFound]);
-    if (!ParseDERFindType(0x18, pbOctetString, dwLengthFound,
+    bReturn = ParseDERFindType(0x18, pbOctetString, dwLengthFound,
         dwPositionFound,
         dwLengthFound,
-        dwPositionError, iTypeError))
+        dwPositionError,
+        iTypeError
+    );
+    if (!bReturn)
     {
         return FALSE;
     }
@@ -692,7 +715,8 @@ BOOL GetGeneralizedTimeStamp(
         &wDay,
         &wHour,
         &wMinute,
-        &wSecond, &wMilliseconds
+        &wSecond,
+        &wMilliseconds
     );
     sst.wYear         = (WORD)wYear;
     sst.wMonth        = (WORD)wMonth;
@@ -716,12 +740,10 @@ INT IsCharacterToStrip(
 }
 
 VOID StripString(
-    std::string & StringArg
+    std::string & StrArg
 )
 {
-    StringArg.erase(remove_if(StringArg.begin(), StringArg.end(),
-        IsCharacterToStrip),
-        StringArg.end());
+    StrArg.erase(remove_if(StrArg.begin(), StrArg.end(), IsCharacterToStrip), StrArg.end());
 }
 
 BOOL GetStringFromCertContext(
@@ -731,7 +753,7 @@ BOOL GetStringFromCertContext(
     std::string & String
 )
 {
-    DWORD dwData      = 0;
+    DWORD dwData      = 0x00;
     LPSTR pszTempName = NULL;
 
     dwData = CertGetNameStringA(pCertContext, Type, Flag, NULL, NULL, 0);
@@ -871,7 +893,7 @@ BOOL CalculateHashOfBytes(
     BYTE        rgbHash[SHA1LEN]    = { 0 };
     CHAR        hexbyte[3]          = { 0 };
     CONST CHAR  rgbDigits[]         = "0123456789abcdef";
-    std::string calculatedHash;
+    std::string CalcedHash;
 
     bReturn = CryptAcquireContext(&hProv, NULL, NULL, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT);
     if (!bReturn)
@@ -919,9 +941,9 @@ BOOL CalculateHashOfBytes(
     {
         hexbyte[0] = rgbDigits[rgbHash[i] >> 4];
         hexbyte[1] = rgbDigits[rgbHash[i] & 0xf];
-        calculatedHash.append(hexbyte);
+        CalcedHash.append(hexbyte);
     }
-    Hash = calculatedHash;
+    Hash = CalcedHash;
     CryptDestroyHash(hHash);
     CryptReleaseContext(hProv, 0);
     return TRUE;
@@ -933,6 +955,7 @@ BOOL CalculateCertCRLpoint(
     std::wstring & CRLpoint
 )
 {
+    BOOL                    bReturn         = FALSE;
     BYTE                    btData[512]     = { 0 };
     WCHAR                   csProperty[512] = { 0 };
     ULONG                   ulDataLen       = 512;
@@ -946,20 +969,19 @@ BOOL CalculateCertCRLpoint(
     {
         return FALSE;
     }
-    if (!CryptDecodeObject(MY_ENCODING, szOID_CRL_DIST_POINTS,
+    bReturn = CryptDecodeObject(MY_ENCODING, szOID_CRL_DIST_POINTS,
         pe->Value.pbData,
         pe->Value.cbData,
         CRYPT_DECODE_NOCOPY_FLAG,
-        pCRLDistPoint, &ulDataLen))
+        pCRLDistPoint, &ulDataLen);
+    if (!bReturn)
     {
         return FALSE;
     }
     for (ULONG idx = 0; idx < pCRLDistPoint->cDistPoint; idx++)
     {
         dpn = &pCRLDistPoint->rgDistPoint[idx].DistPointName;
-        for (ULONG ulAltEntry = 0;
-            ulAltEntry < dpn->FullName.cAltEntry;
-            ulAltEntry++)
+        for (ULONG ulAltEntry = 0; ulAltEntry < dpn->FullName.cAltEntry; ulAltEntry++)
         {
             if (wcslen(csProperty) > 0)
             {
@@ -978,32 +1000,33 @@ BOOL CalculateSignSerial(
     std::string & Serial
 )
 {
+    BOOL    bReturn         = FALSE;
     DWORD   dwSize          = 0x400;
     BYTE    abSerial[0x400] = { 0 };
     CHAR    NameBuff[0x400] = { 0 };
 
     Serial.clear();
-    for (unsigned int uiIter = 0;
-        uiIter < cbData && uiIter < 0x400;
-        uiIter++)
+    for (UINT uiIter = 0; uiIter < cbData && uiIter < 0x400; uiIter++)
     {
         abSerial[uiIter] = pbData[cbData - 1 - uiIter];
     }
-    if (CryptBinaryToStringA(abSerial, cbData, CRYPT_STRING_HEX, NameBuff, &dwSize))
+    bReturn = CryptBinaryToStringA(abSerial, cbData, CRYPT_STRING_HEX, NameBuff, &dwSize);
+    if (!bReturn)
     {
-        DWORD dwIter1 = 0;
-        DWORD dwIter2 = 0;
-        for (dwIter1 = 0; dwIter1 < dwSize; dwIter1++)
-        {
-            if (!isspace(NameBuff[dwIter1]))
-            {
-                NameBuff[dwIter2++] = NameBuff[dwIter1];
-            }
-        }
-        NameBuff[dwIter2] = '\0';
-        Serial = std::string(NameBuff);
-        StripString(Serial);
+        return FALSE;
     }
+    DWORD dwIter1 = 0;
+    DWORD dwIter2 = 0;
+    for (dwIter1 = 0; dwIter1 < dwSize; dwIter1++)
+    {
+        if (!isspace(NameBuff[dwIter1]))
+        {
+            NameBuff[dwIter2++] = NameBuff[dwIter1];
+        }
+    }
+    NameBuff[dwIter2] = '\0';
+    Serial = std::string(NameBuff);
+    StripString(Serial);
     return TRUE;
 }
 
@@ -1022,7 +1045,8 @@ BOOL GetSignerCertificateInfo(
     std::list<SIGNDATA_HANDLE> SignDataChain;
 
     SignChain.clear();
-    bReturn = CryptQueryObject(CERT_QUERY_OBJECT_FILE, FileName,
+    bReturn = CryptQueryObject(CERT_QUERY_OBJECT_FILE,
+        FileName,
         CERT_QUERY_CONTENT_FLAG_PKCS7_SIGNED_EMBED,
         CERT_QUERY_FORMAT_FLAG_BINARY,
         0,
@@ -1030,14 +1054,16 @@ BOOL GetSignerCertificateInfo(
         &dwContentType,
         &dwFormatType,
         &AuthSignData.hCertStore,
-        &hAuthCryptMsg, NULL
+        &hAuthCryptMsg,
+        NULL
     );
     if (!bReturn)
     {
         INT error = GetLastError();
         return bReturn;
     }
-    bReturn = MyCryptMsgGetParam(hAuthCryptMsg, CMSG_SIGNER_INFO_PARAM,
+    bReturn = MyCryptMsgGetParam(hAuthCryptMsg,
+        CMSG_SIGNER_INFO_PARAM,
         0,
         (PVOID *)&AuthSignData.pSignerInfo,
         &AuthSignData.dwObjSize
@@ -1055,7 +1081,8 @@ BOOL GetSignerCertificateInfo(
         MY_ENCODING,
         NULL,
         CERT_SYSTEM_STORE_CURRENT_USER,
-        L"Root");
+        L"Root"
+    );
     if (!hSystemStore)
     {
         LocalFree(AuthSignData.pSignerInfo);
@@ -1086,20 +1113,24 @@ BOOL GetSignerCertificateInfo(
             bReturn = GetCounterSignerData(pCounterSigner,
                 SignNodeInfo.CounterSign.signerName,
                 SignNodeInfo.CounterSign.timeStamp,
-                SignNodeInfo.CounterSign.mailAddress);
+                SignNodeInfo.CounterSign.mailAddress
+            );
         }
         else
         {
             bReturn = GetGeneralizedTimeStamp(iter->pSignerInfo,
-                SignNodeInfo.CounterSign.timeStamp);
+                SignNodeInfo.CounterSign.timeStamp
+            );
         }
         // 计算摘要算法.
         szObjId = iter->pSignerInfo->HashAlgorithm.pszObjId;
         bReturn = CalculateDigestAlgorithm(szObjId,
-            SignNodeInfo.digestAlgorithm);
+            SignNodeInfo.digestAlgorithm
+        );
         // 计算签名版本.
         bReturn = CalculateSignVersion(iter->pSignerInfo->dwVersion,
-            SignNodeInfo.version);
+            SignNodeInfo.version
+        );
         CertInfo.Issuer = iter->pSignerInfo->Issuer;
         CertInfo.SerialNumber = iter->pSignerInfo->SerialNumber;
         // 查找第一个证书Context信息.
@@ -1109,7 +1140,8 @@ BOOL GetSignerCertificateInfo(
             0,
             CERT_FIND_ISSUER_NAME,
             (PVOID)&iter->pSignerInfo->Issuer,
-            NULL);
+            NULL
+        );
         while (pCurrContext)
         {
             PCERT_INFO pCertInfo = pCurrContext->pCertInfo;
@@ -1119,29 +1151,35 @@ BOOL GetSignerCertificateInfo(
             // 计算证书序列号.
             bReturn = CalculateSignSerial(pCertInfo->SerialNumber.pbData,
                 pCertInfo->SerialNumber.cbData,
-                CertNodeInfo.serial);
+                CertNodeInfo.serial
+            );
             // 计算签名证书版本.
             bReturn = CalculateSignVersion(pCertInfo->dwVersion,
-                CertNodeInfo.version);
+                CertNodeInfo.version
+            );
             // 获取使用者名称.
             bReturn = GetStringFromCertContext(pCurrContext,
                 CERT_NAME_SIMPLE_DISPLAY_TYPE,
                 0,
-                CertNodeInfo.subjectName);
+                CertNodeInfo.subjectName
+            );
             // 获取颁发者名称.
             bReturn = GetStringFromCertContext(pCurrContext,
                 CERT_NAME_SIMPLE_DISPLAY_TYPE,
                 CERT_NAME_ISSUER_FLAG,
-                CertNodeInfo.issuerName);
+                CertNodeInfo.issuerName
+            );
             // 计算签名证书指纹.
             bReturn = CalculateHashOfBytes(pCurrContext->pbCertEncoded,
                 CALG_SHA1,
                 pCurrContext->cbCertEncoded,
-                CertNodeInfo.thumbprint);
+                CertNodeInfo.thumbprint
+            );
             // 提取吊销列表分发点.
             bReturn = CalculateCertCRLpoint(pCertInfo->cExtension,
                 pCertInfo->rgExtension,
-                CertNodeInfo.CRLpoint);
+                CertNodeInfo.CRLpoint
+            );
             // 获取证书有效期范围.
             CertNodeInfo.notbefore = TimeToString(&pCertInfo->NotBefore);
             CertNodeInfo.notafter = TimeToString(&pCertInfo->NotAfter);
@@ -1152,7 +1190,8 @@ BOOL GetSignerCertificateInfo(
                 0,
                 CERT_FIND_SUBJECT_NAME,
                 (PVOID)&pCertInfo->Issuer,
-                NULL);
+                NULL
+            );
             // 根证书通常不包含在PE文件的证书库中, 需在系统证书库中查找.
             if (!pCurrContext)
             {
@@ -1161,7 +1200,8 @@ BOOL GetSignerCertificateInfo(
                     0,
                     CERT_FIND_SUBJECT_NAME,
                     (PVOID)&pCertInfo->Issuer,
-                    NULL);
+                    NULL
+                );
             }
             if (!pCurrContext)
             {
@@ -1197,6 +1237,7 @@ BOOL MyCryptCalcFileHash(
     DWORD *HashSize
 )
 {
+    BOOL bReturn = FALSE;
     if (!szBuffer || !HashSize)
     {
         return FALSE;
@@ -1204,15 +1245,15 @@ BOOL MyCryptCalcFileHash(
     *HashSize = 0x00;
     // 获取哈希所需大小.
     CryptCATAdminCalcHashFromFileHandle(FileHandle, HashSize, NULL, 0x00);
-    if (0 == *HashSize)
+    if (0 == *HashSize) // 哈希为0意味着发生错误.
     {
-        // 哈希为0意味着发生错误.
         return FALSE;
     }
     // 分配内存.
     *szBuffer = (PBYTE)calloc(*HashSize, 1);
     // 精确计算哈希值.
-    if (!CryptCATAdminCalcHashFromFileHandle(FileHandle, HashSize, *szBuffer, 0x00))
+    bReturn = CryptCATAdminCalcHashFromFileHandle(FileHandle, HashSize, *szBuffer, 0x00);
+    if (!bReturn)
     {
         free(*szBuffer);
         return FALSE;
@@ -1237,7 +1278,7 @@ BOOL CheckFileDigitalSignature(
     UINT            uiCatCount  = 0x00;
     CATALOG_INFO    InfoStruct  = { 0 };
     BOOL            bReturn     = FALSE;
-    std::wstring    targPath;
+    std::wstring    TargPath;
 
     CatFile.clear();
     SignType.clear();
@@ -1255,7 +1296,8 @@ BOOL CheckFileDigitalSignature(
             NULL,
             OPEN_EXISTING,
             FILE_FLAG_BACKUP_SEMANTICS,
-            NULL);
+            NULL
+        );
         if (INVALID_HANDLE_VALUE == FileHandle)
         {
             CryptCATAdminReleaseContext(Context, 0);
@@ -1278,7 +1320,8 @@ BOOL CheckFileDigitalSignature(
                 szBuffer,
                 dwHashSize,
                 0,
-                p);
+                p
+            );
             p = &CatContext;
             if (!CatContext)
             {
@@ -1292,7 +1335,8 @@ BOOL CheckFileDigitalSignature(
                 szBuffer,
                 dwHashSize,
                 0,
-                &CatContext);
+                &CatContext
+            );
         }
         free(szBuffer);
         break;
@@ -1313,16 +1357,16 @@ BOOL CheckFileDigitalSignature(
     {
         SignType = "embedded";
         CatFile  = L"";
-        targPath = FilePath;
+        TargPath = FilePath;
     }
     else
     {
         SignType = "cataloged";
         CatFile  = CatContext ? InfoStruct.wszCatalogFile : CatPath;
-        targPath = CatFile;
+        TargPath = CatFile;
     }
     // 获取签名证书信息.
-    bReturn = GetSignerCertificateInfo(targPath.c_str(), SignChain);
+    bReturn = GetSignerCertificateInfo(TargPath.c_str(), SignChain);
     // 释放环境结构.
     if (CatContext)
     {
@@ -1333,10 +1377,7 @@ BOOL CheckFileDigitalSignature(
     return bReturn;
 }
 
-INT wmain(
-    INT argc,
-    WCHAR *argv[]
-)
+INT wmain(INT argc, WCHAR *argv[])
 {
     INT iArgCount = 0x00;
     LPWSTR *szArgList = NULL;
