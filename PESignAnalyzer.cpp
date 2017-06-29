@@ -65,7 +65,6 @@ typedef struct _SIGN_NODE_INFO {
 
 BOOL CheckFileDigitalSignature(
     LPCWSTR pwzFilePath,
-    BOOL bNoRevocation,
     LPCWSTR CataPath,
     std::wstring & CataFile,
     std::string & SignType,
@@ -82,8 +81,7 @@ BOOL CertificateCheck(
     std::list<SIGN_NODE_INFO> SignChain;
 
     ImagePath = szCurrFullPath;
-    BOOL bReturn = CheckFileDigitalSignature(ImagePath.c_str(), TRUE,
-        NULL,
+    BOOL bReturn = CheckFileDigitalSignature(ImagePath.c_str(), NULL,
         CataFile,
         SignType,
         SignChain
@@ -1254,7 +1252,6 @@ BOOL MyCryptCalcFileHash(
 
 BOOL CheckFileDigitalSignature(
     LPCWSTR FilePath,
-    BOOL bNoRevocation,
     LPCWSTR CataPath,
     std::wstring & CataFile,
     std::string & SignType,
@@ -1274,7 +1271,7 @@ BOOL CheckFileDigitalSignature(
         {
             break;
         }
-        // Get signature Context structure.
+        // Acquire signature Context structure.
         bReturn = CryptCATAdminAcquireContext(&Context, NULL, 0);
         if (!bReturn)
         {
@@ -1292,9 +1289,9 @@ BOOL CheckFileDigitalSignature(
         {
             break;
         }
-        // calculate file hash.
+        // Calculate file hash.
         DWORD dwHashSize = 0x00;
-        PBYTE szBuffer = NULL;
+        PBYTE szBuffer   = NULL;
         bReturn = MyCryptCalcFileHash(FileHandle, &szBuffer, &dwHashSize);
         CloseHandle(FileHandle);
         if (!bReturn)
@@ -1306,6 +1303,7 @@ BOOL CheckFileDigitalSignature(
         HCATINFO CataContext = NULL;
         do
         {
+            // Probe catalog Context structure layer.
             CataContext = CryptCATAdminEnumCatalogFromHash(Context,
                 szBuffer,
                 dwHashSize,
@@ -1317,6 +1315,7 @@ BOOL CheckFileDigitalSignature(
         uiCataLimit--;
         for (UINT uiIter = 0; uiIter < uiCataLimit; uiIter++)
         {
+            // Get specified catalog Context structure.
             CataContext = CryptCATAdminEnumCatalogFromHash(Context,
                 szBuffer,
                 dwHashSize,
@@ -1329,6 +1328,7 @@ BOOL CheckFileDigitalSignature(
         {
             break;
         }
+        // Get catalog information.
         CATALOG_INFO CataInfo = { 0 };
         CataInfo.cbStruct = sizeof(CATALOG_INFO);
         bReturn = CryptCATCatalogInfoFromContext(CataContext, &CataInfo, 0);
@@ -1341,7 +1341,9 @@ BOOL CheckFileDigitalSignature(
     } while (FALSE);
     if (Context)
     {
+        // Release signature Context structure.
         bReturn = CryptCATAdminReleaseContext(Context, 0);
+        Context = NULL;
     }
 
     // Get certificate information.
@@ -1350,7 +1352,7 @@ BOOL CheckFileDigitalSignature(
     {
         // If we cannot get embedded signature information, we
         // just attempt to get cataloged signature information
-        // if it has catalog.
+        // if it has catalog or catalog is specified.
         SignType = "cataloged";
         bReturn = GetSignerCertificateInfo(CataFile.c_str(), SignChain);
     }
