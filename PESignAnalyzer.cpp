@@ -37,12 +37,12 @@ using namespace std;
 #pragma comment(lib, "Wintrust.lib")
 
 typedef struct _SIGN_COUNTER_SIGN {
-    std::string signerName;
-    std::string mailAddress;
-    std::string timeStamp;
+    std::string SignerName;
+    std::string MailAddress;
+    std::string TimeStamp;
 } SIGN_COUNTER_SIGN, *PSIGN_COUNTER_SIGN;
 
-// 针对证书链中每个证书的节点
+/// Per certificate node.
 typedef struct _CERT_NODE_INFO {
     std::string SubjectName;
     std::string IssuerName;
@@ -55,74 +55,19 @@ typedef struct _CERT_NODE_INFO {
     std::wstring CRLpoint;
 } CERT_NODE_INFO, *PCERT_NODE_INFO;
 
-// 针对多签名中每个签名的节点
+/// Per signature node.
 typedef struct _SIGN_NODE_INFO {
     std::string DigestAlgorithm;
     std::string Version;
     SIGN_COUNTER_SIGN CounterSign;
-    std::list<CERT_NODE_INFO> CertNodeChain;
+    std::list<CERT_NODE_INFO> CertChain;
 } SIGN_NODE_INFO, *PSIGN_NODE_INFO;
 
-BOOL CheckFileDigitalSignature(
-    LPCWSTR pwzFilePath,
-    LPCWSTR CataPath,
-    std::wstring & CataFile,
-    std::string & SignType,
-    std::list<SIGN_NODE_INFO> & SignChain
-);
-
-BOOL CertificateCheck(
-    CONST WCHAR *szCurrFullPath
-)
-{
-    std::string  SignType;
-    std::wstring CataFile;
-    std::wstring ImagePath;
-    std::list<SIGN_NODE_INFO> SignChain;
-
-    ImagePath = szCurrFullPath;
-    BOOL bReturn = CheckFileDigitalSignature(ImagePath.c_str(), NULL,
-        CataFile,
-        SignType,
-        SignChain
-    );
-    std::wcout << L"filepath: " << ImagePath << endl;
-    if (!bReturn)
-    {
-        std::cout << "signtype: " << "none" << endl;
-        return FALSE;
-    }
-    std::cout  << "signtype: "  << SignType << endl;
-    std::wcout << L"catafile: " << CataFile << endl;
-    std::cout  << "-----------------------" << endl;
-    UINT idx = 0;
-    std::list<SIGN_NODE_INFO>::iterator iter;
-    for (iter = SignChain.begin(); iter != SignChain.end(); iter++)
-    {
-        std::cout << "[ The " << ++idx << " Sign Info ]" << endl;
-        std::cout << "timestamp:       " << iter->CounterSign.timeStamp << endl;
-        std::cout << "version:         " << iter->Version << endl;
-        std::cout << "digestAlgorithm: " << iter->DigestAlgorithm << endl;
-
-        std::list<CERT_NODE_INFO>::iterator iter1;
-        for (iter1 = iter->CertNodeChain.begin();
-            iter1 != iter->CertNodeChain.end(); iter1++)
-        {
-            std::cout  <<  " |--"  << "-------------------" << endl;
-            std::cout  <<  " |- "  <<  "subject:       " << iter1->SubjectName << endl;
-            std::cout  <<  " |- "  <<  "issuer:        " << iter1->IssuerName << endl;
-            std::cout  <<  " |- "  <<  "serial:        " << iter1->Serial << endl;
-            std::cout  <<  " |- "  <<  "thumbprint:    " << iter1->Thumbprint << endl;
-            std::cout  <<  " |- "  <<  "signAlgorithm: " << iter1->SignAlgorithm << endl;
-            std::cout  <<  " |- "  <<  "version:       " << iter1->Version << endl;
-            std::cout  <<  " |- "  <<  "notbefore:     " << iter1->NotBefore << endl;
-            std::cout  <<  " |- "  <<  "notafter:      " << iter1->NotAfter << endl;
-            std::wcout << L" |- "  << L"CRLpoint:      " << iter1->CRLpoint << endl;
-        }
-        std::cout << "-----------------------" << endl;
-    }
-    return TRUE;
-}
+typedef struct _SIGNDATA_HANDLE {
+    DWORD dwObjSize;
+    PCMSG_SIGNER_INFO pSignerInfo;
+    HCERTSTORE hCertStoreHandle;
+} SIGNDATA_HANDLE, *PSIGNDATA_HANDLE;
 
 BOOL MyCryptMsgGetParam(
     HCRYPTMSG hCryptMsg,
@@ -130,8 +75,7 @@ BOOL MyCryptMsgGetParam(
     DWORD dwIndex,
     PVOID *pParam,
     DWORD *dwOutSize
-)
-{
+) {
     BOOL  bReturn = FALSE;
     DWORD dwSize  = 0;
     if (!pParam)
@@ -163,12 +107,6 @@ BOOL MyCryptMsgGetParam(
     return TRUE;
 }
 
-typedef struct _SIGNDATA_HANDLE {
-    DWORD      dwObjSize;
-    HCERTSTORE hCertStore;
-    PCMSG_SIGNER_INFO pSignerInfo;
-} SIGNDATA_HANDLE, *PNESTED_HANDLE;
-
 CONST UCHAR SG_ProtoCoded[] = {
     0x30, 0x82,
 };
@@ -185,11 +123,9 @@ CONST UCHAR SG_SignedData[] = {
 
 // https://msdn.microsoft.com/zh-cn/library/windows/desktop/aa374890(v=vs.85).aspx
 BOOL GetNestedSignerInfo(
-    PCMSG_SIGNER_INFO pSignerInfo,
-    DWORD cbSignerSize,
+    CONST PSIGNDATA_HANDLE AuthSignData,
     std::list<SIGNDATA_HANDLE> & NestedChain
-)
-{
+) {
     BOOL        bSucceed    = FALSE;
     BOOL        bReturn     = FALSE;
     HCRYPTMSG   hNestedMsg  = NULL;
@@ -198,37 +134,50 @@ BOOL GetNestedSignerInfo(
     DWORD       n           = 0x00;
     DWORD       cbCurrData  = 0x00;
 
-    if (!pSignerInfo)
+    if (!AuthSignData->pSignerInfo)
     {
         return FALSE;
     }
     __try
     {
         // Traverse and look for a nested signature.
-        for (n = 0; n < pSignerInfo->UnauthAttrs.cAttr; n++)
+        for (n = 0; n < AuthSignData->pSignerInfo->UnauthAttrs.cAttr; n++)
         {
-            if (lstrcmpA(pSignerInfo->UnauthAttrs.rgAttr[n].pszObjId, szOID_NESTED_SIGNATURE) == 0)
+            if (!lstrcmpA(AuthSignData->pSignerInfo->UnauthAttrs.rgAttr[n].pszObjId,
+                szOID_NESTED_SIGNATURE))
             {
                 break;
             }
         }
         // Cannot find a nested signature attribute.
-        if (n >= pSignerInfo->UnauthAttrs.cAttr)
+        if (n >= AuthSignData->pSignerInfo->UnauthAttrs.cAttr)
         {
-            bReturn = FALSE;
+            bSucceed = FALSE;
             __leave;
         }
-        pbCurrData = pSignerInfo->UnauthAttrs.rgAttr[n].rgValue[0].pbData;
-        cbCurrData = pSignerInfo->UnauthAttrs.rgAttr[n].rgValue[0].cbData;
+        pbCurrData = AuthSignData->pSignerInfo->UnauthAttrs.rgAttr[n].rgValue[0].pbData;
+        cbCurrData = AuthSignData->pSignerInfo->UnauthAttrs.rgAttr[n].rgValue[0].cbData;
+        hNestedMsg = CryptMsgOpenToDecode(X509_ASN_ENCODING | PKCS_7_ASN_ENCODING,
+            0,
+            0,
+            0,
+            NULL,
+            0
+        );
+        if (!hNestedMsg) // Fatal Error
+        {
+            bSucceed = FALSE;
+            __leave;
+        }
         // Multiple nested signatures just add one attr in UnauthAttrs
         // list of the main signature pointing to the first nested si-
         // gnature. Every nested signature exists side by side in an 8
         // bytes aligned way. According to the size of major signature
         // parse the nested signatures one by one.
-        while (pbCurrData > (BYTE *)pSignerInfo && pbCurrData < (BYTE *)pSignerInfo + cbSignerSize)
+        while (pbCurrData > (BYTE *)AuthSignData->pSignerInfo &&
+            pbCurrData < (BYTE *)AuthSignData->pSignerInfo + AuthSignData->dwObjSize)
         {
             SIGNDATA_HANDLE NestedHandle = { 0 };
-            hNestedMsg = NULL;
             // NOTE: The size in 30 82 xx doesnt contain its own size.
             // HEAD:
             // 0000: 30 82 04 df                ; SEQUENCE (4df Bytes)
@@ -240,26 +189,14 @@ BOOL GetNestedSignerInfo(
             {
                 break;
             }
-            hNestedMsg = CryptMsgOpenToDecode(X509_ASN_ENCODING | PKCS_7_ASN_ENCODING,
-                0,
-                0,
-                0,
-                NULL, 0
-            );
-            if (!hNestedMsg)
-            {
-                break; // Fatal Error
-            }
             // Big Endian -> Little Endian
             cbCurrData = XCH_WORD_LITEND(*(WORD *)(pbCurrData + 2)) + 4;
             pbNextData = pbCurrData;
             pbNextData += _8BYTE_ALIGN(cbCurrData, (ULONG_PTR)pbCurrData);
             bReturn = CryptMsgUpdate(hNestedMsg, pbCurrData, cbCurrData, TRUE);
+            pbCurrData = pbNextData;
             if (!bReturn)
             {
-                CryptMsgClose(hNestedMsg);
-                hNestedMsg = NULL;
-                pbCurrData = pbNextData;
                 continue;
             }
             bReturn = MyCryptMsgGetParam(hNestedMsg, CMSG_SIGNER_INFO_PARAM,
@@ -269,12 +206,9 @@ BOOL GetNestedSignerInfo(
             );
             if (!bReturn)
             {
-                CryptMsgClose(hNestedMsg);
-                hNestedMsg = NULL;
-                pbCurrData = pbNextData;
                 continue;
             }
-            NestedHandle.hCertStore = CertOpenStore(CERT_STORE_PROV_MSG,
+            NestedHandle.hCertStoreHandle = CertOpenStore(CERT_STORE_PROV_MSG,
                 PKCS_7_ASN_ENCODING | X509_ASN_ENCODING,
                 0,
                 0,
@@ -282,23 +216,18 @@ BOOL GetNestedSignerInfo(
             );
             bSucceed = TRUE;
             NestedChain.push_back(NestedHandle);
-            CryptMsgClose(hNestedMsg);
-            hNestedMsg = NULL;
-            pbCurrData = pbNextData;
         }
     }
     __finally
     {
         if (hNestedMsg) CryptMsgClose(hNestedMsg);
-        hNestedMsg = NULL;
     }
     return bSucceed;
 }
 
 BOOL GetAuthedAttribute(
     PCMSG_SIGNER_INFO pSignerInfo
-)
-{
+) {
     BOOL    bSucceed   = FALSE;
     DWORD   dwObjSize  = 0x00;
     DWORD   n          = 0x00;
@@ -307,7 +236,7 @@ BOOL GetAuthedAttribute(
     {
         for (n = 0; n < pSignerInfo->AuthAttrs.cAttr; n++)
         {
-            if (lstrcmpA(pSignerInfo->AuthAttrs.rgAttr[n].pszObjId, szOID_RSA_counterSign) == 0)
+            if (!lstrcmpA(pSignerInfo->AuthAttrs.rgAttr[n].pszObjId, szOID_RSA_counterSign))
             {
                 bSucceed = TRUE;
                 break;
@@ -324,8 +253,7 @@ BOOL GetAuthedAttribute(
 BOOL GetCounterSignerInfo(
     PCMSG_SIGNER_INFO pSignerInfo,
     PCMSG_SIGNER_INFO *pTargetSigner
-)
-{
+) {
     BOOL    bSucceed   = FALSE;
     BOOL    bReturn    = FALSE;
     DWORD   dwObjSize  = 0x00;
@@ -340,7 +268,7 @@ BOOL GetCounterSignerInfo(
         *pTargetSigner = NULL;
         for (n = 0; n < pSignerInfo->UnauthAttrs.cAttr; n++)
         {
-            if (lstrcmpA(pSignerInfo->UnauthAttrs.rgAttr[n].pszObjId, szOID_RSA_counterSign) == 0)
+            if (!lstrcmpA(pSignerInfo->UnauthAttrs.rgAttr[n].pszObjId, szOID_RSA_counterSign))
             {
                 break;
             }
@@ -393,8 +321,7 @@ BOOL GetCounterSignerInfo(
 std::string TimeToString(
     FILETIME *pftIn,
     SYSTEMTIME *pstIn = NULL
-)
-{
+) {
     SYSTEMTIME st = { 0 };
     CHAR szBuffer[256] = { 0 };
 
@@ -419,12 +346,9 @@ std::string TimeToString(
 }
 
 BOOL GetCounterSignerData(
-    PCMSG_SIGNER_INFO SignerInfo,
-    std::string & SignerName,
-    std::string & TimeStamp,
-    std::string & EmailAddr
-)
-{
+    CONST PCMSG_SIGNER_INFO SignerInfo,
+    SIGN_COUNTER_SIGN & CounterSign
+) {
     BOOL        bReturn  = FALSE;
     DWORD       n        = 0x00;
     DWORD       dwData   = 0x00;
@@ -434,7 +358,7 @@ BOOL GetCounterSignerData(
     // Find szOID_RSA_signingTime OID.
     for (n = 0; n < SignerInfo->AuthAttrs.cAttr; n++)
     {
-        if (lstrcmpA(SignerInfo->AuthAttrs.rgAttr[n].pszObjId, szOID_RSA_signingTime) == 0)
+        if (!lstrcmpA(SignerInfo->AuthAttrs.rgAttr[n].pszObjId, szOID_RSA_signingTime))
         {
             break;
         }
@@ -460,7 +384,7 @@ BOOL GetCounterSignerData(
     // Convert.
     FileTimeToLocalFileTime(&ft, &lft);
     FileTimeToSystemTime(&lft, &st);
-    TimeStamp = TimeToString(NULL, &st);
+    CounterSign.TimeStamp = TimeToString(NULL, &st);
     return TRUE;
 }
 
@@ -468,8 +392,7 @@ BOOL SafeToReadNBytes(
     DWORD dwSize,
     DWORD dwStart,
     DWORD dwRequestSize
-)
-{
+) {
     return dwSize - dwStart >= dwRequestSize;
 }
 
@@ -477,8 +400,7 @@ void ParseDERType(
     BYTE bIn,
     INT & iType,
     INT & iClass
-)
-{
+) {
     iType = bIn & 0x3F;
     iClass = bIn >> 6;
 }
@@ -487,8 +409,7 @@ DWORD ReadNumberFromNBytes(
     PBYTE pbSignature,
     DWORD dwStart,
     DWORD dwRequestSize
-)
-{
+) {
     DWORD dwNumber = 0;
     for (DWORD i = 0; i < dwRequestSize; i++)
     {
@@ -502,8 +423,7 @@ BOOL ParseDERSize(
     DWORD dwSize,
     DWORD & dwSizefound,
     DWORD & dwBytesParsed
-)
-{
+) {
     if (pbSignature[0] > 0x80 &&
         !SafeToReadNBytes(dwSize, 1, pbSignature[0] - 0x80))
     {
@@ -530,8 +450,7 @@ BOOL ParseDERFindType(
     DWORD & dwLengthFound,
     DWORD & dwPositionError,
     INT & iTypeError
-)
-{
+) {
     DWORD   dwPosition      = 0;
     DWORD   dwSizeFound     = 0;
     DWORD   dwBytesParsed   = 0;
@@ -652,8 +571,7 @@ BOOL ParseDERFindType(
 BOOL GetGeneralizedTimeStamp(
     PCMSG_SIGNER_INFO pSignerInfo,
     std::string & TimeStamp
-)
-{
+) {
     BOOL        bSucceed        = FALSE;
     BOOL        bReturn         = FALSE;
     DWORD       dwPositionFound = 0;
@@ -674,7 +592,7 @@ BOOL GetGeneralizedTimeStamp(
 
     for (n = 0; n < pSignerInfo->UnauthAttrs.cAttr; n++)
     {
-        if (lstrcmpA(pSignerInfo->UnauthAttrs.rgAttr[n].pszObjId, szOID_RFC3161_counterSign) == 0)
+        if (!lstrcmpA(pSignerInfo->UnauthAttrs.rgAttr[n].pszObjId, szOID_RFC3161_counterSign))
         {
             break;
         }
@@ -734,15 +652,13 @@ BOOL GetGeneralizedTimeStamp(
 
 INT IsCharacterToStrip(
     INT Character
-)
-{
+) {
     return 0 == Character || '\t' == Character || '\n' == Character || '\r' == Character;
 }
 
 VOID StripString(
     std::string & StrArg
-)
-{
+) {
     StrArg.erase(remove_if(StrArg.begin(), StrArg.end(), IsCharacterToStrip), StrArg.end());
 }
 
@@ -751,8 +667,7 @@ BOOL GetStringFromCertContext(
     DWORD Type,
     DWORD Flag,
     std::string & String
-)
-{
+) {
     DWORD dwData      = 0x00;
     LPSTR pszTempName = NULL;
 
@@ -783,8 +698,7 @@ BOOL GetStringFromCertContext(
 BOOL CalculateSignVersion(
     DWORD dwVersion,
     std::string & Version
-)
-{
+) {
     switch (dwVersion)
     {
     case CERT_V1:
@@ -807,8 +721,7 @@ BOOL CalculateSignVersion(
 BOOL CalculateDigestAlgorithm(
     LPCSTR pszObjId,
     std::string & Algorithm
-)
-{
+) {
     if (!pszObjId)
     {
         Algorithm = "Unknown";
@@ -836,8 +749,7 @@ BOOL CalculateDigestAlgorithm(
 BOOL CalculateCertAlgorithm(
     LPCSTR pszObjId,
     std::string & Algorithm
-)
-{
+) {
     if (!pszObjId)
     {
         Algorithm = "Unknown";
@@ -883,8 +795,7 @@ BOOL CalculateHashOfBytes(
     ALG_ID Algid,
     DWORD dwBinary,
     std::string & Hash
-)
-{
+) {
     BOOL        bReturn             = FALSE;
     DWORD       dwLastError         = 0;
     HCRYPTPROV  hProv               = 0;
@@ -953,8 +864,7 @@ BOOL CalculateCertCRLpoint(
     DWORD cExtensions,
     CERT_EXTENSION rgExtensions[],
     std::wstring & CRLpoint
-)
-{
+) {
     BOOL                    bReturn         = FALSE;
     BYTE                    btData[512]     = { 0 };
     WCHAR                   csProperty[512] = { 0 };
@@ -999,8 +909,7 @@ BOOL CalculateSignSerial(
     BYTE *pbData,
     DWORD cbData,
     std::string & Serial
-)
-{
+) {
     BOOL    bReturn         = FALSE;
     DWORD   dwSize          = 0x400;
     BYTE    abSerial[0x400] = { 0 };
@@ -1031,51 +940,103 @@ BOOL CalculateSignSerial(
     return TRUE;
 }
 
+// Getting Signer Signature Information.
+// If return TRUE, it will continue for caller;
+// else, jump out the while loop.
+BOOL GetSignerSignatureInfo(
+    CONST HCERTSTORE hSystemStore,
+    CONST HCERTSTORE hCertStore,
+    CONST PCCERT_CONTEXT pOrigContext,
+    PCCERT_CONTEXT & pCurrContext,
+    SIGN_NODE_INFO & SignNode
+) {
+    BOOL            bReturn   = FALSE;
+    PCERT_INFO      pCertInfo = pCurrContext->pCertInfo;
+    LPCSTR          szObjId   = NULL;
+    CERT_NODE_INFO  CertNode;
+
+    // Get certificate algorithm.
+    szObjId = pCertInfo->SignatureAlgorithm.pszObjId;
+    bReturn = CalculateCertAlgorithm(szObjId, CertNode.SignAlgorithm);
+    // Get certificate serial.
+    bReturn = CalculateSignSerial(pCertInfo->SerialNumber.pbData,
+        pCertInfo->SerialNumber.cbData,
+        CertNode.Serial
+    );
+    // Get certificate version.
+    bReturn = CalculateSignVersion(pCertInfo->dwVersion, CertNode.Version);
+    // Get certficate subject.
+    bReturn = GetStringFromCertContext(pCurrContext,
+        CERT_NAME_SIMPLE_DISPLAY_TYPE,
+        0,
+        CertNode.SubjectName
+    );
+    // Get certificate issuer.
+    bReturn = GetStringFromCertContext(pCurrContext,
+        CERT_NAME_SIMPLE_DISPLAY_TYPE,
+        CERT_NAME_ISSUER_FLAG,
+        CertNode.IssuerName
+    );
+    // Get certificate thumbprint.
+    bReturn = CalculateHashOfBytes(pCurrContext->pbCertEncoded,
+        CALG_SHA1,
+        pCurrContext->cbCertEncoded,
+        CertNode.Thumbprint
+    );
+    // Get certificate CRL point.
+    bReturn = CalculateCertCRLpoint(pCertInfo->cExtension,
+        pCertInfo->rgExtension,
+        CertNode.CRLpoint
+    );
+    // Get certificate validity.
+    CertNode.NotBefore = TimeToString(&pCertInfo->NotBefore);
+    CertNode.NotAfter  = TimeToString(&pCertInfo->NotAfter);
+
+    SignNode.CertChain.push_back(CertNode);
+
+    // Get next certificate link node.
+    pCurrContext = CertFindCertificateInStore(hCertStore,
+        MY_ENCODING,
+        0,
+        CERT_FIND_SUBJECT_NAME,
+        (PVOID)&pCertInfo->Issuer,
+        NULL
+    );
+    // Root certificate is always included pe file certstore,
+    // We can find it in system certstore.
+    if (!pCurrContext)
+    {
+        pCurrContext = CertFindCertificateInStore(hSystemStore,
+            MY_ENCODING,
+            0,
+            CERT_FIND_SUBJECT_NAME,
+            (PVOID)&pCertInfo->Issuer,
+            NULL
+        );
+    }
+    if (!pCurrContext)
+    {
+        return FALSE;
+    }
+    // Sometimes issuer is equal to subject. Jump out if so.
+    return CertComparePublicKeyInfo(MY_ENCODING,
+        &pCurrContext->pCertInfo->SubjectPublicKeyInfo,
+        &pOrigContext->pCertInfo->SubjectPublicKeyInfo
+    ) == FALSE;
+}
+
+// Getting Signer Certificate Information.
 BOOL GetSignerCertificateInfo(
     LPCWSTR FileName,
     std::list<SIGN_NODE_INFO> & SignChain
-)
-{
+) {
     BOOL            bSucceed        = FALSE;
     BOOL            bReturn         = FALSE;
-    HCRYPTMSG       hAuthCryptMsg   = NULL;
     HCERTSTORE      hSystemStore    = NULL;
-    DWORD           dwEncoding      = 0x00;
-    DWORD           dwContentType   = 0x00;
-    DWORD           dwFormatType    = 0x00;
     SIGNDATA_HANDLE AuthSignData    = { 0 };
     std::list<SIGNDATA_HANDLE> SignDataChain;
 
     SignChain.clear();
-    bReturn = CryptQueryObject(CERT_QUERY_OBJECT_FILE, FileName,
-        CERT_QUERY_CONTENT_FLAG_PKCS7_SIGNED_EMBED,
-        CERT_QUERY_FORMAT_FLAG_BINARY,
-        0,
-        &dwEncoding,
-        &dwContentType,
-        &dwFormatType,
-        &AuthSignData.hCertStore,
-        &hAuthCryptMsg,
-        NULL
-    );
-    if (!bReturn)
-    {
-        INT error = GetLastError();
-        return FALSE;
-    }
-    bReturn = MyCryptMsgGetParam(hAuthCryptMsg, CMSG_SIGNER_INFO_PARAM,
-        0,
-        (PVOID *)&AuthSignData.pSignerInfo,
-        &AuthSignData.dwObjSize
-    );
-    if (!bReturn)
-    {
-        CryptMsgClose(hAuthCryptMsg);
-        CertCloseStore(AuthSignData.hCertStore, 0);
-        return FALSE;
-    }
-    CryptMsgClose(hAuthCryptMsg);
-    hAuthCryptMsg = NULL;
     // Open system certstore handle, in order to find root certificate.
     hSystemStore = CertOpenStore(CERT_STORE_PROV_SYSTEM, MY_ENCODING,
         NULL,
@@ -1084,141 +1045,104 @@ BOOL GetSignerCertificateInfo(
     );
     if (!hSystemStore)
     {
-        LocalFree(AuthSignData.pSignerInfo);
-        CertCloseStore(AuthSignData.hCertStore, 0);
+        INT error = GetLastError();
         return FALSE;
     }
+    // Query file auth signature and cert store Object.
+    HCRYPTMSG hAuthCryptMsg = NULL;
+    DWORD dwEncoding = 0x00;
+    bReturn = CryptQueryObject(CERT_QUERY_OBJECT_FILE, FileName,
+        CERT_QUERY_CONTENT_FLAG_PKCS7_SIGNED_EMBED,
+        CERT_QUERY_FORMAT_FLAG_BINARY,
+        0,
+        &dwEncoding,
+        NULL,
+        NULL,
+        &AuthSignData.hCertStoreHandle,
+        &hAuthCryptMsg,
+        NULL
+    );
+    if (!bReturn)
+    {
+        INT error = GetLastError();
+        CertCloseStore(hSystemStore, 0);
+        return FALSE;
+    }
+    // Get signer information pointer.
+    bReturn = MyCryptMsgGetParam(hAuthCryptMsg, CMSG_SIGNER_INFO_PARAM,
+        0,
+        (PVOID *)&AuthSignData.pSignerInfo,
+        &AuthSignData.dwObjSize
+    );
+    CryptMsgClose(hAuthCryptMsg);
+    hAuthCryptMsg = NULL;
+    if (!bReturn)
+    {
+        INT error = GetLastError();
+        CertCloseStore(AuthSignData.hCertStoreHandle, 0);
+        CertCloseStore(hSystemStore, 0);
+        return FALSE;
+    }
+
     // Get and append nested signature information.
     SignDataChain.push_back(AuthSignData);
-    GetNestedSignerInfo(AuthSignData.pSignerInfo, AuthSignData.dwObjSize, SignDataChain);
-    for (list<SIGNDATA_HANDLE>::iterator iter = SignDataChain.begin();
-        iter != SignDataChain.end(); iter++)
+    bReturn = GetNestedSignerInfo(&AuthSignData, SignDataChain);
+
+    list<SIGNDATA_HANDLE>::iterator iter = SignDataChain.begin();
+    for (; iter != SignDataChain.end(); iter++)
     {
         PCCERT_CONTEXT      pOrigContext   = NULL;
         PCCERT_CONTEXT      pCurrContext   = NULL;
         LPCSTR              szObjId        = NULL;
         PCMSG_SIGNER_INFO   pCounterSigner = NULL;
-        CERT_INFO           CertInfo;
-        CERT_NODE_INFO      CertNodeInfo;
-        SIGN_NODE_INFO      SignNodeInfo;
+        SIGN_NODE_INFO      SignNode;
 
         GetAuthedAttribute(iter->pSignerInfo);
-        GetCounterSignerInfo(iter->pSignerInfo, &pCounterSigner);
         // Get signature timestamp.
+        GetCounterSignerInfo(iter->pSignerInfo, &pCounterSigner);
         if (pCounterSigner)
         {
-            bReturn = GetCounterSignerData(pCounterSigner,
-                SignNodeInfo.CounterSign.signerName,
-                SignNodeInfo.CounterSign.timeStamp,
-                SignNodeInfo.CounterSign.mailAddress
-            );
+            bReturn = GetCounterSignerData(pCounterSigner, SignNode.CounterSign);
         }
         else
         {
             bReturn = GetGeneralizedTimeStamp(iter->pSignerInfo,
-                SignNodeInfo.CounterSign.timeStamp
+                SignNode.CounterSign.TimeStamp
             );
         }
         // Get digest algorithm.
         szObjId = iter->pSignerInfo->HashAlgorithm.pszObjId;
-        bReturn = CalculateDigestAlgorithm(szObjId, SignNodeInfo.DigestAlgorithm);
+        bReturn = CalculateDigestAlgorithm(szObjId, SignNode.DigestAlgorithm);
         // Get signature version.
-        bReturn = CalculateSignVersion(iter->pSignerInfo->dwVersion, SignNodeInfo.Version);
-        CertInfo.Issuer = iter->pSignerInfo->Issuer;
-        CertInfo.SerialNumber = iter->pSignerInfo->SerialNumber;
+        bReturn = CalculateSignVersion(iter->pSignerInfo->dwVersion, SignNode.Version);
         // Find the first certificate Context information.
-        pCurrContext = CertFindCertificateInStore(iter->hCertStore,
+        pCurrContext = CertFindCertificateInStore(iter->hCertStoreHandle,
             MY_ENCODING,
             0,
             CERT_FIND_ISSUER_NAME,
             (PVOID)&iter->pSignerInfo->Issuer,
             NULL
         );
-        while (pCurrContext)
+        bReturn = (pCurrContext != NULL);
+        while (bReturn)
         {
-            PCERT_INFO pCertInfo = pCurrContext->pCertInfo;
-            // Get certificate algorithm.
-            szObjId = pCertInfo->SignatureAlgorithm.pszObjId;
-            bReturn = CalculateCertAlgorithm(szObjId, CertNodeInfo.SignAlgorithm);
-            // Get certificate serial.
-            bReturn = CalculateSignSerial(pCertInfo->SerialNumber.pbData,
-                pCertInfo->SerialNumber.cbData,
-                CertNodeInfo.Serial
-            );
-            // Get certificate version.
-            bReturn = CalculateSignVersion(pCertInfo->dwVersion, CertNodeInfo.Version);
-            // Get certficate subject.
-            bReturn = GetStringFromCertContext(pCurrContext,
-                CERT_NAME_SIMPLE_DISPLAY_TYPE,
-                0,
-                CertNodeInfo.SubjectName
-            );
-            // Get certificate issuer.
-            bReturn = GetStringFromCertContext(pCurrContext,
-                CERT_NAME_SIMPLE_DISPLAY_TYPE,
-                CERT_NAME_ISSUER_FLAG,
-                CertNodeInfo.IssuerName
-            );
-            // Get certificate thumbprint.
-            bReturn = CalculateHashOfBytes(pCurrContext->pbCertEncoded,
-                CALG_SHA1,
-                pCurrContext->cbCertEncoded,
-                CertNodeInfo.Thumbprint
-            );
-            // Get certificate CRL point.
-            bReturn = CalculateCertCRLpoint(pCertInfo->cExtension,
-                pCertInfo->rgExtension,
-                CertNodeInfo.CRLpoint
-            );
-            // Get certificate validity.
-            CertNodeInfo.NotBefore = TimeToString(&pCertInfo->NotBefore);
-            CertNodeInfo.NotAfter = TimeToString(&pCertInfo->NotAfter);
-            SignNodeInfo.CertNodeChain.push_back(CertNodeInfo);
             pOrigContext = pCurrContext;
-            pCurrContext = CertFindCertificateInStore(iter->hCertStore,
-                MY_ENCODING,
-                0,
-                CERT_FIND_SUBJECT_NAME,
-                (PVOID)&pCertInfo->Issuer,
-                NULL
+            // Get every signer signature information.
+            bReturn = GetSignerSignatureInfo(hSystemStore, iter->hCertStoreHandle,
+                pOrigContext,
+                pCurrContext,
+                SignNode
             );
-            // Root certificate is always included pe file certstore,
-            // We can find it in system certstore.
-            if (!pCurrContext)
-            {
-                pCurrContext = CertFindCertificateInStore(hSystemStore,
-                    MY_ENCODING,
-                    0,
-                    CERT_FIND_SUBJECT_NAME,
-                    (PVOID)&pCertInfo->Issuer,
-                    NULL
-                );
-            }
-            if (!pCurrContext)
-            {
-                break;
-            }
-            bReturn = CertComparePublicKeyInfo(MY_ENCODING,
-                &pCurrContext->pCertInfo->SubjectPublicKeyInfo,
-                &pOrigContext->pCertInfo->SubjectPublicKeyInfo
-            );
-            // Sometimes issuer is equal to subject, jump out if so.
-            if (bReturn)
-            {
-                CertFreeCertificateContext(pCurrContext);
-                break;
-            }
             CertFreeCertificateContext(pOrigContext);
-            pOrigContext = NULL;
         }
-        SignChain.push_back(SignNodeInfo);
-        bSucceed = TRUE;
+        if (pCurrContext) CertFreeCertificateContext(pCurrContext);
         if (pCounterSigner) LocalFree(pCounterSigner);
-        if (iter->hCertStore) CertCloseStore(iter->hCertStore, 0);
         if (iter->pSignerInfo) LocalFree(iter->pSignerInfo);
-        if (pOrigContext) CertFreeCertificateContext(pOrigContext);
+        if (iter->hCertStoreHandle) CertCloseStore(iter->hCertStoreHandle, 0);
+        bSucceed = TRUE;
+        SignChain.push_back(SignNode);
     }
-    if (hSystemStore) CertCloseStore(hSystemStore, 0);
+    CertCloseStore(hSystemStore, 0);
     return bSucceed;
 }
 
@@ -1226,8 +1150,7 @@ BOOL MyCryptCalcFileHash(
     HANDLE FileHandle,
     PBYTE *szBuffer,
     DWORD *HashSize
-)
-{
+) {
     BOOL bReturn = FALSE;
     if (!szBuffer || !HashSize)
     {
@@ -1235,8 +1158,8 @@ BOOL MyCryptCalcFileHash(
     }
     *HashSize = 0x00;
     // Get size.
-    CryptCATAdminCalcHashFromFileHandle(FileHandle, HashSize, NULL, 0x00);
-    if (0 == *HashSize) // hash being zero means fatal mistake.
+    bReturn = CryptCATAdminCalcHashFromFileHandle(FileHandle, HashSize, NULL, 0x00);
+    if (0 == *HashSize) // HashSize being zero means fatal error.
     {
         return FALSE;
     }
@@ -1245,9 +1168,8 @@ BOOL MyCryptCalcFileHash(
     if (!bReturn)
     {
         free(*szBuffer);
-        return FALSE;
     }
-    return TRUE;
+    return bReturn;
 }
 
 BOOL CheckFileDigitalSignature(
@@ -1256,8 +1178,7 @@ BOOL CheckFileDigitalSignature(
     std::wstring & CataFile,
     std::string & SignType,
     std::list<SIGN_NODE_INFO> & SignChain
-)
-{
+) {
     PVOID   Context = NULL;
     BOOL    bReturn = FALSE;
 
@@ -1336,6 +1257,7 @@ BOOL CheckFileDigitalSignature(
         {
             CataFile = CataInfo.wszCatalogFile;
         }
+        // Release catalog Context structure.
         bReturn = CryptCATAdminReleaseCatalogContext(Context, CataContext, 0);
         CataContext = NULL;
     } while (FALSE);
@@ -1361,15 +1283,54 @@ BOOL CheckFileDigitalSignature(
 
 INT wmain(INT argc, WCHAR *argv[])
 {
-    INT iArgCount = 0x00;
-    LPWSTR *szArgList = NULL;
-    szArgList = CommandLineToArgvW(GetCommandLineW(), &iArgCount);
-    if (iArgCount != 2)
+    if (argc != 2)
     {
         std::cout << "Parameter error!" << endl;
         std::cout << "Usage: PESignAnalyzer.exe filepath" << endl;
-        return 1;
+        return 0x01;
     }
-    CertificateCheck(szArgList[1]);
+
+    BOOL            bReturn     = FALSE;
+    PWCHAR          pwzFilePath = NULL;
+    std::wstring    CataFile;
+    std::string     SignType;
+    std::list<SIGN_NODE_INFO> SignChain;
+
+    pwzFilePath = argv[1];
+    std::wcout << L"filepath: " << pwzFilePath << endl;
+    bReturn = CheckFileDigitalSignature(pwzFilePath, NULL, CataFile, SignType, SignChain);
+    if (!bReturn)
+    {
+        std::cout << "signtype: " << "none" << endl;
+        return 0x01;
+    }
+    std::cout  << "signtype: "              << SignType << endl;
+    std::wcout << L"catafile: "             << CataFile << endl;
+    std::cout  << "-----------------------" << endl;
+    UINT idx = 0;
+    std::list<SIGN_NODE_INFO>::iterator iter = SignChain.begin();
+    for (; iter != SignChain.end(); iter++)
+    {
+        std::cout << "[ The "               << ++idx << " Sign Info ]" << endl;
+        std::cout << "timestamp:       "    << iter->CounterSign.TimeStamp << endl;
+        std::cout << "version:         "    << iter->Version << endl;
+        std::cout << "digestAlgorithm: "    << iter->DigestAlgorithm << endl;
+
+        std::list<CERT_NODE_INFO>::iterator iter1 = iter->CertChain.begin();
+        for (; iter1 != iter->CertChain.end(); iter1++)
+        {
+            std::cout  <<  " |--" <<  "-------------------" << endl;
+            std::cout  <<  " |- " <<  "subject:       " << iter1->SubjectName << endl;
+            std::cout  <<  " |- " <<  "issuer:        " << iter1->IssuerName << endl;
+            std::cout  <<  " |- " <<  "serial:        " << iter1->Serial << endl;
+            std::cout  <<  " |- " <<  "thumbprint:    " << iter1->Thumbprint << endl;
+            std::cout  <<  " |- " <<  "signAlgorithm: " << iter1->SignAlgorithm << endl;
+            std::cout  <<  " |- " <<  "version:       " << iter1->Version << endl;
+            std::cout  <<  " |- " <<  "notbefore:     " << iter1->NotBefore << endl;
+            std::cout  <<  " |- " <<  "notafter:      " << iter1->NotAfter << endl;
+            std::wcout << L" |- " << L"CRLpoint:      " << iter1->CRLpoint << endl;
+        }
+        std::cout << "-----------------------" << endl;
+    }
     return 0x00;
 }
