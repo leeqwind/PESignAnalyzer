@@ -76,9 +76,9 @@ BOOL CertificateCheck(
     CONST WCHAR *szCurrFullPath
 )
 {
-    std::string     signType;
-    std::wstring    cataFile;
-    std::wstring    imagePath;
+    std::string  signType;
+    std::wstring cataFile;
+    std::wstring imagePath;
     std::list<SIGN_NODE_INFO> signChain;
 
     imagePath = szCurrFullPath;
@@ -192,6 +192,7 @@ BOOL GetNestedSignerInfo(
     std::list<SIGNDATA_HANDLE> & NestedChain
 )
 {
+    BOOL        bSucceed    = FALSE;
     BOOL        bReturn     = FALSE;
     HCRYPTMSG   hNestedMsg  = NULL;
     PBYTE       pbCurrData  = NULL;
@@ -281,7 +282,7 @@ BOOL GetNestedSignerInfo(
                 0,
                 hNestedMsg
             );
-            bReturn = TRUE;
+            bSucceed = TRUE;
             NestedChain.push_back(NestedHandle);
             CryptMsgClose(hNestedMsg);
             hNestedMsg = NULL;
@@ -290,17 +291,16 @@ BOOL GetNestedSignerInfo(
     }
     __finally
     {
-        bReturn = FALSE;
         if (hNestedMsg) CryptMsgClose(hNestedMsg);
     }
-    return bReturn;
+    return bSucceed;
 }
 
 BOOL GetAuthedAttribute(
     PCMSG_SIGNER_INFO pSignerInfo
 )
 {
-    BOOL    bReturn    = FALSE;
+    BOOL    bSucceed   = FALSE;
     DWORD   dwObjSize  = 0x00;
     DWORD   n          = 0x00;
 
@@ -310,16 +310,15 @@ BOOL GetAuthedAttribute(
         {
             if (lstrcmpA(pSignerInfo->AuthAttrs.rgAttr[n].pszObjId, szOID_RSA_counterSign) == 0)
             {
-                bReturn = TRUE;
+                bSucceed = TRUE;
                 break;
             }
         }
     }
     __finally
     {
-        bReturn = FALSE;
     }
-    return bReturn;
+    return bSucceed;
 }
 
 // http://support.microsoft.com/kb/323809
@@ -328,6 +327,7 @@ BOOL GetCounterSignerInfo(
     PCMSG_SIGNER_INFO *pTargetSigner
 )
 {
+    BOOL    bSucceed   = FALSE;
     BOOL    bReturn    = FALSE;
     DWORD   dwObjSize  = 0x00;
     DWORD   n          = 0x00;
@@ -348,7 +348,7 @@ BOOL GetCounterSignerInfo(
         }
         if (n >= pSignerInfo->UnauthAttrs.cAttr)
         {
-            bReturn = FALSE;
+            bSucceed = FALSE;
             __leave;
         }
         bReturn = CryptDecodeObject(MY_ENCODING,
@@ -361,13 +361,13 @@ BOOL GetCounterSignerInfo(
         );
         if (!bReturn)
         {
-            bReturn = FALSE;
+            bSucceed = FALSE;
             __leave;
         }
         *pTargetSigner = (PCMSG_SIGNER_INFO)LocalAlloc(LPTR, dwObjSize);
         if (!*pTargetSigner)
         {
-            bReturn = FALSE;
+            bSucceed = FALSE;
             __leave;
         }
         bReturn = CryptDecodeObject(MY_ENCODING,
@@ -380,16 +380,15 @@ BOOL GetCounterSignerInfo(
         );
         if (!bReturn)
         {
-            bReturn = FALSE;
+            bSucceed = FALSE;
             __leave;
         }
-        bReturn = TRUE;
+        bSucceed = TRUE;
     }
     __finally
     {
-        bReturn = FALSE;
     }
-    return bReturn;
+    return bSucceed;
 }
 
 std::string TimeToString(
@@ -397,7 +396,7 @@ std::string TimeToString(
     SYSTEMTIME *pstIn = NULL
 )
 {
-    SYSTEMTIME st;
+    SYSTEMTIME st = { 0 };
     CHAR szBuffer[256] = { 0 };
 
     if (!pstIn)
@@ -427,9 +426,9 @@ BOOL GetCounterSignerData(
     std::string & EmailAddr
 )
 {
-    BOOL        bReturn = FALSE;
-    DWORD       n       = 0x00;
-    DWORD       dwData  = 0x00;
+    BOOL        bReturn  = FALSE;
+    DWORD       n        = 0x00;
+    DWORD       dwData   = 0x00;
     FILETIME    lft, ft;
     SYSTEMTIME  st;
 
@@ -655,6 +654,7 @@ BOOL GetGeneralizedTimeStamp(
     std::string & TimeStamp
 )
 {
+    BOOL        bSucceed        = FALSE;
     BOOL        bReturn         = FALSE;
     DWORD       dwPositionFound = 0;
     DWORD       dwLengthFound   = 0;
@@ -1045,8 +1045,7 @@ BOOL GetSignerCertificateInfo(
     std::list<SIGNDATA_HANDLE> SignDataChain;
 
     SignChain.clear();
-    bReturn = CryptQueryObject(CERT_QUERY_OBJECT_FILE,
-        FileName,
+    bReturn = CryptQueryObject(CERT_QUERY_OBJECT_FILE, FileName,
         CERT_QUERY_CONTENT_FLAG_PKCS7_SIGNED_EMBED,
         CERT_QUERY_FORMAT_FLAG_BINARY,
         0,
@@ -1060,10 +1059,9 @@ BOOL GetSignerCertificateInfo(
     if (!bReturn)
     {
         INT error = GetLastError();
-        return bReturn;
+        return FALSE;
     }
-    bReturn = MyCryptMsgGetParam(hAuthCryptMsg,
-        CMSG_SIGNER_INFO_PARAM,
+    bReturn = MyCryptMsgGetParam(hAuthCryptMsg, CMSG_SIGNER_INFO_PARAM,
         0,
         (PVOID *)&AuthSignData.pSignerInfo,
         &AuthSignData.dwObjSize
@@ -1072,13 +1070,12 @@ BOOL GetSignerCertificateInfo(
     {
         CryptMsgClose(hAuthCryptMsg);
         CertCloseStore(AuthSignData.hCertStore, 0);
-        return bReturn;
+        return FALSE;
     }
     CryptMsgClose(hAuthCryptMsg);
     hAuthCryptMsg = NULL;
     // 打开系统证书库句柄, 以在后面查找根证书数据.
-    hSystemStore = CertOpenStore(CERT_STORE_PROV_SYSTEM,
-        MY_ENCODING,
+    hSystemStore = CertOpenStore(CERT_STORE_PROV_SYSTEM, MY_ENCODING,
         NULL,
         CERT_SYSTEM_STORE_CURRENT_USER,
         L"Root"
@@ -1087,13 +1084,12 @@ BOOL GetSignerCertificateInfo(
     {
         LocalFree(AuthSignData.pSignerInfo);
         CertCloseStore(AuthSignData.hCertStore, 0);
-        return bReturn;
+        return FALSE;
     }
     // 生成多签名列表以通过迭代枚举.
     SignDataChain.push_back(AuthSignData);
     // 获取并插入嵌套签名者信息节点.
-    GetNestedSignerInfo(AuthSignData.pSignerInfo, AuthSignData.dwObjSize,
-        SignDataChain);
+    GetNestedSignerInfo(AuthSignData.pSignerInfo, AuthSignData.dwObjSize, SignDataChain);
     for (list<SIGNDATA_HANDLE>::iterator iter = SignDataChain.begin();
         iter != SignDataChain.end(); iter++)
     {
@@ -1124,13 +1120,9 @@ BOOL GetSignerCertificateInfo(
         }
         // 计算摘要算法.
         szObjId = iter->pSignerInfo->HashAlgorithm.pszObjId;
-        bReturn = CalculateDigestAlgorithm(szObjId,
-            SignNodeInfo.digestAlgorithm
-        );
+        bReturn = CalculateDigestAlgorithm(szObjId, SignNodeInfo.digestAlgorithm);
         // 计算签名版本.
-        bReturn = CalculateSignVersion(iter->pSignerInfo->dwVersion,
-            SignNodeInfo.version
-        );
+        bReturn = CalculateSignVersion(iter->pSignerInfo->dwVersion, SignNodeInfo.version);
         CertInfo.Issuer = iter->pSignerInfo->Issuer;
         CertInfo.SerialNumber = iter->pSignerInfo->SerialNumber;
         // 查找第一个证书Context信息.
@@ -1154,9 +1146,7 @@ BOOL GetSignerCertificateInfo(
                 CertNodeInfo.serial
             );
             // 计算签名证书版本.
-            bReturn = CalculateSignVersion(pCertInfo->dwVersion,
-                CertNodeInfo.version
-            );
+            bReturn = CalculateSignVersion(pCertInfo->dwVersion, CertNodeInfo.version);
             // 获取使用者名称.
             bReturn = GetStringFromCertContext(pCurrContext,
                 CERT_NAME_SIMPLE_DISPLAY_TYPE,
