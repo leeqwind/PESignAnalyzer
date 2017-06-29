@@ -166,8 +166,8 @@ BOOL MyCryptMsgGetParam(
 }
 
 typedef struct _SIGNDATA_HANDLE {
-    HCERTSTORE hCertStore;
     DWORD      dwObjSize;
+    HCERTSTORE hCertStore;
     PCMSG_SIGNER_INFO pSignerInfo;
 } SIGNDATA_HANDLE, *PNESTED_HANDLE;
 
@@ -895,7 +895,7 @@ BOOL CalculateHashOfBytes(
     BYTE        rgbHash[SHA1LEN]    = { 0 };
     CHAR        hexbyte[3]          = { 0 };
     CONST CHAR  rgbDigits[]         = "0123456789abcdef";
-    std::string CalcedHash;
+    std::string CalcHash;
 
     bReturn = CryptAcquireContext(&hProv, NULL, NULL, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT);
     if (!bReturn)
@@ -943,9 +943,9 @@ BOOL CalculateHashOfBytes(
     {
         hexbyte[0] = rgbDigits[rgbHash[i] >> 4];
         hexbyte[1] = rgbDigits[rgbHash[i] & 0xf];
-        CalcedHash.append(hexbyte);
+        CalcHash.append(hexbyte);
     }
-    Hash = CalcedHash;
+    Hash = CalcHash;
     CryptDestroyHash(hHash);
     CryptReleaseContext(hProv, 0);
     return TRUE;
@@ -1204,7 +1204,7 @@ BOOL GetSignerCertificateInfo(
                 &pCurrContext->pCertInfo->SubjectPublicKeyInfo,
                 &pOrigContext->pCertInfo->SubjectPublicKeyInfo
             );
-            // Sometimes issuer is equal to subject, jump out.
+            // Sometimes issuer is equal to subject, jump out if so.
             if (bReturn)
             {
                 CertFreeCertificateContext(pCurrContext);
@@ -1261,27 +1261,27 @@ BOOL CheckFileDigitalSignature(
     std::list<SIGN_NODE_INFO> & SignChain
 )
 {
-    HCATINFO        CatContext  = NULL;
-    PVOID           Context     = NULL;
-    HANDLE          FileHandle  = NULL;
-    PBYTE           szBuffer    = NULL;
-    DWORD           dwHashSize  = 0x00;
-    UINT            uiCatCount  = 0x00;
-    CATALOG_INFO    InfoStruct  = { 0 };
-    BOOL            bReturn     = FALSE;
+    PVOID   Context = NULL;
+    BOOL    bReturn = FALSE;
 
-    CataFile.clear();
-    SignType.clear();
-    InfoStruct.cbStruct = sizeof(CATALOG_INFO);
-    // Get signature Context structure.
-    bReturn = CryptCATAdminAcquireContext(&Context, NULL, 0);
-    if (!bReturn)
+    CataFile = CataPath ? CataPath : L"";
+    SignType = "embedded";
+
+    do
     {
-        return FALSE;
-    }
-    while (!CataPath)
-    {
-        FileHandle = CreateFileW(FilePath, GENERIC_READ,
+        // Skip getting catalog Context if CataPath is specified.
+        if (CataPath)
+        {
+            break;
+        }
+        // Get signature Context structure.
+        bReturn = CryptCATAdminAcquireContext(&Context, NULL, 0);
+        if (!bReturn)
+        {
+            break;
+        }
+        // Open the specified file handle to get the file hash.
+        HANDLE FileHandle = CreateFileW(FilePath, GENERIC_READ,
             7,
             NULL,
             OPEN_EXISTING,
@@ -1290,66 +1290,65 @@ BOOL CheckFileDigitalSignature(
         );
         if (INVALID_HANDLE_VALUE == FileHandle)
         {
-            CryptCATAdminReleaseContext(Context, 0);
-            return FALSE;
-        }
-        // calculate file hash.
-        bReturn = MyCryptCalcFileHash(FileHandle, &szBuffer, &dwHashSize);
-        if (!bReturn)
-        {
-            CryptCATAdminReleaseContext(Context, 0);
-            CloseHandle(FileHandle);
             break;
         }
+        // calculate file hash.
+        DWORD dwHashSize = 0x00;
+        PBYTE szBuffer = NULL;
+        bReturn = MyCryptCalcFileHash(FileHandle, &szBuffer, &dwHashSize);
         CloseHandle(FileHandle);
-        // Get catalog Context structure.
-        HCATINFO *p = NULL;
-        for (;;)
+        if (!bReturn)
         {
-            CatContext = CryptCATAdminEnumCatalogFromHash(Context,
-                szBuffer,
-                dwHashSize,
-                0,
-                p
-            );
-            p = &CatContext;
-            if (!CatContext)
-            {
-                break;
-            }
-            uiCatCount++;
+            break;
         }
-        for (UINT uiIter = 0; uiIter < uiCatCount; uiIter++)
+        // Get catalog Context structure.
+        UINT     uiCataLimit = 0x00;
+        HCATINFO CataContext = NULL;
+        do
         {
-            CatContext = CryptCATAdminEnumCatalogFromHash(Context,
+            CataContext = CryptCATAdminEnumCatalogFromHash(Context,
                 szBuffer,
                 dwHashSize,
                 0,
-                &CatContext
+                uiCataLimit == 0 ? NULL : &CataContext
+            );
+            uiCataLimit++;
+        } while (CataContext);
+        uiCataLimit--;
+        for (UINT uiIter = 0; uiIter < uiCataLimit; uiIter++)
+        {
+            CataContext = CryptCATAdminEnumCatalogFromHash(Context,
+                szBuffer,
+                dwHashSize,
+                0,
+                &CataContext
             );
         }
         free(szBuffer);
-        break;
-    }
-    bReturn  = FALSE;
-    CataFile = CataPath ? CataPath : L"";
-    SignType = "embedded";
-    if (CatContext)
+        if (!CataContext)
+        {
+            break;
+        }
+        CATALOG_INFO CataInfo = { 0 };
+        CataInfo.cbStruct = sizeof(CATALOG_INFO);
+        bReturn = CryptCATCatalogInfoFromContext(CataContext, &CataInfo, 0);
+        if (bReturn)
+        {
+            CataFile = CataInfo.wszCatalogFile;
+        }
+        bReturn = CryptCATAdminReleaseCatalogContext(Context, CataContext, 0);
+        CataContext = NULL;
+    } while (FALSE);
+    if (Context)
     {
-        bReturn = CryptCATCatalogInfoFromContext(CatContext, &InfoStruct, 0);
+        bReturn = CryptCATAdminReleaseContext(Context, 0);
     }
-    if (bReturn)
-    {
-        CataFile = InfoStruct.wszCatalogFile;
-        CryptCATAdminReleaseCatalogContext(Context, CatContext, 0);
-    }
-    CryptCATAdminReleaseContext(Context, 0);
 
     // Get certificate information.
     bReturn = GetSignerCertificateInfo(FilePath, SignChain);
     if (!bReturn && !CataFile.empty())
     {
-        // If we cannot get embedded signature information,
+        // If we cannot get embedded signature information, we
         // just attempt to get cataloged signature information
         // if it has catalog.
         SignType = "cataloged";
