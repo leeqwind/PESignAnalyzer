@@ -11,7 +11,7 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="PESignAnalyzer.cpp" />
+    <ClCompile Include="../PESignAnalyzer.cpp" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{765EAA83-2A44-4E2C-B8D3-C87A74500614}</ProjectGuid>

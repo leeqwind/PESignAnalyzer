@@ -6,7 +6,7 @@
  * E-mail: leeqwind123@outlook.com
  * Notice: This program can retrieve signature information from PE
  *         files which signed by a/some certificate(s) on Windows.
- *         Supporting multi-signed info and certificates chain.
+ *         Supporting multi-signed information and certificates chain.
  */
 
 #include <Windows.h>
@@ -44,21 +44,21 @@ typedef struct _SIGN_COUNTER_SIGN {
 
 // 针对证书链中每个证书的节点
 typedef struct _CERT_NODE_INFO {
-    std::string subjectName;
-    std::string issuerName;
-    std::string version;
-    std::string serial;
-    std::string thumbprint;
-    std::string notbefore;
-    std::string notafter;
-    std::string signAlgorithm;
+    std::string SubjectName;
+    std::string IssuerName;
+    std::string Version;
+    std::string Serial;
+    std::string Thumbprint;
+    std::string NotBefore;
+    std::string NotAfter;
+    std::string SignAlgorithm;
     std::wstring CRLpoint;
 } CERT_NODE_INFO, *PCERT_NODE_INFO;
 
 // 针对多签名中每个签名的节点
 typedef struct _SIGN_NODE_INFO {
-    std::string digestAlgorithm;
-    std::string version;
+    std::string DigestAlgorithm;
+    std::string Version;
     SIGN_COUNTER_SIGN CounterSign;
     std::list<CERT_NODE_INFO> CertNodeChain;
 } SIGN_NODE_INFO, *PSIGN_NODE_INFO;
@@ -66,8 +66,8 @@ typedef struct _SIGN_NODE_INFO {
 BOOL CheckFileDigitalSignature(
     LPCWSTR pwzFilePath,
     BOOL bNoRevocation,
-    LPCWSTR CatalogPath,
-    std::wstring & CatFile,
+    LPCWSTR CataPath,
+    std::wstring & CataFile,
     std::string & SignType,
     std::list<SIGN_NODE_INFO> & SignChain
 );
@@ -76,49 +76,49 @@ BOOL CertificateCheck(
     CONST WCHAR *szCurrFullPath
 )
 {
-    std::string  signType;
-    std::wstring cataFile;
-    std::wstring imagePath;
-    std::list<SIGN_NODE_INFO> signChain;
+    std::string  SignType;
+    std::wstring CataFile;
+    std::wstring ImagePath;
+    std::list<SIGN_NODE_INFO> SignChain;
 
-    imagePath = szCurrFullPath;
-    BOOL bReturn = CheckFileDigitalSignature(imagePath.c_str(), TRUE,
+    ImagePath = szCurrFullPath;
+    BOOL bReturn = CheckFileDigitalSignature(ImagePath.c_str(), TRUE,
         NULL,
-        cataFile,
-        signType,
-        signChain
+        CataFile,
+        SignType,
+        SignChain
     );
-    std::wcout << L"filepath: " << imagePath << endl;
+    std::wcout << L"filepath: " << ImagePath << endl;
     if (!bReturn)
     {
         std::cout << "signtype: " << "none" << endl;
         return FALSE;
     }
-    std::cout  << "signtype: "  << signType << endl;
-    std::wcout << L"catafile: " << cataFile << endl;
+    std::cout  << "signtype: "  << SignType << endl;
+    std::wcout << L"catafile: " << CataFile << endl;
     std::cout  << "-----------------------" << endl;
     UINT idx = 0;
     std::list<SIGN_NODE_INFO>::iterator iter;
-    for (iter = signChain.begin(); iter != signChain.end(); iter++)
+    for (iter = SignChain.begin(); iter != SignChain.end(); iter++)
     {
         std::cout << "[ The " << ++idx << " Sign Info ]" << endl;
         std::cout << "timestamp:       " << iter->CounterSign.timeStamp << endl;
-        std::cout << "version:         " << iter->version << endl;
-        std::cout << "digestAlgorithm: " << iter->digestAlgorithm << endl;
+        std::cout << "version:         " << iter->Version << endl;
+        std::cout << "digestAlgorithm: " << iter->DigestAlgorithm << endl;
 
         std::list<CERT_NODE_INFO>::iterator iter1;
         for (iter1 = iter->CertNodeChain.begin();
             iter1 != iter->CertNodeChain.end(); iter1++)
         {
             std::cout  <<  " |--"  << "-------------------" << endl;
-            std::cout  <<  " |- "  <<  "subject:       " << iter1->subjectName << endl;
-            std::cout  <<  " |- "  <<  "issuer:        " << iter1->issuerName << endl;
-            std::cout  <<  " |- "  <<  "serial:        " << iter1->serial << endl;
-            std::cout  <<  " |- "  <<  "thumbprint:    " << iter1->thumbprint << endl;
-            std::cout  <<  " |- "  <<  "signAlgorithm: " << iter1->signAlgorithm << endl;
-            std::cout  <<  " |- "  <<  "version:       " << iter1->version << endl;
-            std::cout  <<  " |- "  <<  "notbefore:     " << iter1->notbefore << endl;
-            std::cout  <<  " |- "  <<  "notafter:      " << iter1->notafter << endl;
+            std::cout  <<  " |- "  <<  "subject:       " << iter1->SubjectName << endl;
+            std::cout  <<  " |- "  <<  "issuer:        " << iter1->IssuerName << endl;
+            std::cout  <<  " |- "  <<  "serial:        " << iter1->Serial << endl;
+            std::cout  <<  " |- "  <<  "thumbprint:    " << iter1->Thumbprint << endl;
+            std::cout  <<  " |- "  <<  "signAlgorithm: " << iter1->SignAlgorithm << endl;
+            std::cout  <<  " |- "  <<  "version:       " << iter1->Version << endl;
+            std::cout  <<  " |- "  <<  "notbefore:     " << iter1->NotBefore << endl;
+            std::cout  <<  " |- "  <<  "notafter:      " << iter1->NotAfter << endl;
             std::wcout << L" |- "  << L"CRLpoint:      " << iter1->CRLpoint << endl;
         }
         std::cout << "-----------------------" << endl;
@@ -292,6 +292,7 @@ BOOL GetNestedSignerInfo(
     __finally
     {
         if (hNestedMsg) CryptMsgClose(hNestedMsg);
+        hNestedMsg = NULL;
     }
     return bSucceed;
 }
@@ -432,7 +433,7 @@ BOOL GetCounterSignerData(
     FILETIME    lft, ft;
     SYSTEMTIME  st;
 
-    // 循环遍历认证属性并查找 szOID_RSA_signingTime OID.
+    // Find szOID_RSA_signingTime OID.
     for (n = 0; n < SignerInfo->AuthAttrs.cAttr; n++)
     {
         if (lstrcmpA(SignerInfo->AuthAttrs.rgAttr[n].pszObjId, szOID_RSA_signingTime) == 0)
@@ -444,7 +445,7 @@ BOOL GetCounterSignerData(
     {
         return FALSE;
     }
-    // 解码并获得 FILETIME 结构体.
+    // Decode and get FILETIME structure.
     dwData = sizeof(ft);
     bReturn = CryptDecodeObject(MY_ENCODING,
         szOID_RSA_signingTime,
@@ -458,7 +459,7 @@ BOOL GetCounterSignerData(
     {
         return FALSE;
     }
-    // 转换成本地时间.
+    // Convert.
     FileTimeToLocalFileTime(&ft, &lft);
     FileTimeToSystemTime(&lft, &st);
     TimeStamp = TimeToString(NULL, &st);
@@ -627,7 +628,8 @@ BOOL ParseDERFindType(
         case 0x31: // set
             dwPosition++;
             if (!ParseDERSize(pbSignature + dwPosition, dwSize - dwPosition,
-                dwSizeFound, dwBytesParsed))
+                dwSizeFound,
+                dwBytesParsed))
             {
                 dwPositionError = dwPosition;
                 iTypeError = -9;
@@ -695,7 +697,7 @@ BOOL GetGeneralizedTimeStamp(
     {
         return FALSE;
     }
-    PBYTE pbOctetString = &(pSignerInfo->UnauthAttrs.rgAttr[n].rgValue[0].pbData[dwPositionFound]);
+    PBYTE pbOctetString = &pSignerInfo->UnauthAttrs.rgAttr[n].rgValue[0].pbData[dwPositionFound];
     bReturn = ParseDERFindType(0x18, pbOctetString, dwLengthFound,
         dwPositionFound,
         dwLengthFound,
@@ -973,7 +975,8 @@ BOOL CalculateCertCRLpoint(
         pe->Value.pbData,
         pe->Value.cbData,
         CRYPT_DECODE_NOCOPY_FLAG,
-        pCRLDistPoint, &ulDataLen);
+        pCRLDistPoint, &ulDataLen
+    );
     if (!bReturn)
     {
         return FALSE;
@@ -1035,6 +1038,7 @@ BOOL GetSignerCertificateInfo(
     std::list<SIGN_NODE_INFO> & SignChain
 )
 {
+    BOOL            bSucceed        = FALSE;
     BOOL            bReturn         = FALSE;
     HCRYPTMSG       hAuthCryptMsg   = NULL;
     HCERTSTORE      hSystemStore    = NULL;
@@ -1074,7 +1078,7 @@ BOOL GetSignerCertificateInfo(
     }
     CryptMsgClose(hAuthCryptMsg);
     hAuthCryptMsg = NULL;
-    // 打开系统证书库句柄, 以在后面查找根证书数据.
+    // Open system certstore handle, in order to find root certificate.
     hSystemStore = CertOpenStore(CERT_STORE_PROV_SYSTEM, MY_ENCODING,
         NULL,
         CERT_SYSTEM_STORE_CURRENT_USER,
@@ -1086,9 +1090,8 @@ BOOL GetSignerCertificateInfo(
         CertCloseStore(AuthSignData.hCertStore, 0);
         return FALSE;
     }
-    // 生成多签名列表以通过迭代枚举.
+    // Get and append nested signature information.
     SignDataChain.push_back(AuthSignData);
-    // 获取并插入嵌套签名者信息节点.
     GetNestedSignerInfo(AuthSignData.pSignerInfo, AuthSignData.dwObjSize, SignDataChain);
     for (list<SIGNDATA_HANDLE>::iterator iter = SignDataChain.begin();
         iter != SignDataChain.end(); iter++)
@@ -1103,7 +1106,7 @@ BOOL GetSignerCertificateInfo(
 
         GetAuthedAttribute(iter->pSignerInfo);
         GetCounterSignerInfo(iter->pSignerInfo, &pCounterSigner);
-        // 计算签名时间戳.
+        // Get signature timestamp.
         if (pCounterSigner)
         {
             bReturn = GetCounterSignerData(pCounterSigner,
@@ -1118,15 +1121,14 @@ BOOL GetSignerCertificateInfo(
                 SignNodeInfo.CounterSign.timeStamp
             );
         }
-        // 计算摘要算法.
+        // Get digest algorithm.
         szObjId = iter->pSignerInfo->HashAlgorithm.pszObjId;
-        bReturn = CalculateDigestAlgorithm(szObjId, SignNodeInfo.digestAlgorithm);
-        // 计算签名版本.
-        bReturn = CalculateSignVersion(iter->pSignerInfo->dwVersion, SignNodeInfo.version);
+        bReturn = CalculateDigestAlgorithm(szObjId, SignNodeInfo.DigestAlgorithm);
+        // Get signature version.
+        bReturn = CalculateSignVersion(iter->pSignerInfo->dwVersion, SignNodeInfo.Version);
         CertInfo.Issuer = iter->pSignerInfo->Issuer;
         CertInfo.SerialNumber = iter->pSignerInfo->SerialNumber;
-        // 查找第一个证书Context信息.
-        pCurrContext = NULL;
+        // Find the first certificate Context information.
         pCurrContext = CertFindCertificateInStore(iter->hCertStore,
             MY_ENCODING,
             0,
@@ -1137,42 +1139,42 @@ BOOL GetSignerCertificateInfo(
         while (pCurrContext)
         {
             PCERT_INFO pCertInfo = pCurrContext->pCertInfo;
-            // 计算证书签名算法.
+            // Get certificate algorithm.
             szObjId = pCertInfo->SignatureAlgorithm.pszObjId;
-            bReturn = CalculateCertAlgorithm(szObjId, CertNodeInfo.signAlgorithm);
-            // 计算证书序列号.
+            bReturn = CalculateCertAlgorithm(szObjId, CertNodeInfo.SignAlgorithm);
+            // Get certificate serial.
             bReturn = CalculateSignSerial(pCertInfo->SerialNumber.pbData,
                 pCertInfo->SerialNumber.cbData,
-                CertNodeInfo.serial
+                CertNodeInfo.Serial
             );
-            // 计算签名证书版本.
-            bReturn = CalculateSignVersion(pCertInfo->dwVersion, CertNodeInfo.version);
-            // 获取使用者名称.
+            // Get certificate version.
+            bReturn = CalculateSignVersion(pCertInfo->dwVersion, CertNodeInfo.Version);
+            // Get certficate subject.
             bReturn = GetStringFromCertContext(pCurrContext,
                 CERT_NAME_SIMPLE_DISPLAY_TYPE,
                 0,
-                CertNodeInfo.subjectName
+                CertNodeInfo.SubjectName
             );
-            // 获取颁发者名称.
+            // Get certificate issuer.
             bReturn = GetStringFromCertContext(pCurrContext,
                 CERT_NAME_SIMPLE_DISPLAY_TYPE,
                 CERT_NAME_ISSUER_FLAG,
-                CertNodeInfo.issuerName
+                CertNodeInfo.IssuerName
             );
-            // 计算签名证书指纹.
+            // Get certificate thumbprint.
             bReturn = CalculateHashOfBytes(pCurrContext->pbCertEncoded,
                 CALG_SHA1,
                 pCurrContext->cbCertEncoded,
-                CertNodeInfo.thumbprint
+                CertNodeInfo.Thumbprint
             );
-            // 提取吊销列表分发点.
+            // Get certificate CRL point.
             bReturn = CalculateCertCRLpoint(pCertInfo->cExtension,
                 pCertInfo->rgExtension,
                 CertNodeInfo.CRLpoint
             );
-            // 获取证书有效期范围.
-            CertNodeInfo.notbefore = TimeToString(&pCertInfo->NotBefore);
-            CertNodeInfo.notafter = TimeToString(&pCertInfo->NotAfter);
+            // Get certificate validity.
+            CertNodeInfo.NotBefore = TimeToString(&pCertInfo->NotBefore);
+            CertNodeInfo.NotAfter = TimeToString(&pCertInfo->NotAfter);
             SignNodeInfo.CertNodeChain.push_back(CertNodeInfo);
             pOrigContext = pCurrContext;
             pCurrContext = CertFindCertificateInStore(iter->hCertStore,
@@ -1182,7 +1184,8 @@ BOOL GetSignerCertificateInfo(
                 (PVOID)&pCertInfo->Issuer,
                 NULL
             );
-            // 根证书通常不包含在PE文件的证书库中, 需在系统证书库中查找.
+            // Root certificate is always included pe file certstore,
+            // We can find it in system certstore.
             if (!pCurrContext)
             {
                 pCurrContext = CertFindCertificateInStore(hSystemStore,
@@ -1197,11 +1200,11 @@ BOOL GetSignerCertificateInfo(
             {
                 break;
             }
-            // 部分证书的颁发者和使用者相同, 跳出.
             bReturn = CertComparePublicKeyInfo(MY_ENCODING,
                 &pCurrContext->pCertInfo->SubjectPublicKeyInfo,
                 &pOrigContext->pCertInfo->SubjectPublicKeyInfo
             );
+            // Sometimes issuer is equal to subject, jump out.
             if (bReturn)
             {
                 CertFreeCertificateContext(pCurrContext);
@@ -1211,14 +1214,14 @@ BOOL GetSignerCertificateInfo(
             pOrigContext = NULL;
         }
         SignChain.push_back(SignNodeInfo);
-        bReturn = TRUE;
+        bSucceed = TRUE;
         if (pCounterSigner) LocalFree(pCounterSigner);
         if (iter->hCertStore) CertCloseStore(iter->hCertStore, 0);
         if (iter->pSignerInfo) LocalFree(iter->pSignerInfo);
         if (pOrigContext) CertFreeCertificateContext(pOrigContext);
     }
     if (hSystemStore) CertCloseStore(hSystemStore, 0);
-    return bReturn;
+    return bSucceed;
 }
 
 BOOL MyCryptCalcFileHash(
@@ -1233,15 +1236,13 @@ BOOL MyCryptCalcFileHash(
         return FALSE;
     }
     *HashSize = 0x00;
-    // 获取哈希所需大小.
+    // Get size.
     CryptCATAdminCalcHashFromFileHandle(FileHandle, HashSize, NULL, 0x00);
-    if (0 == *HashSize) // 哈希为0意味着发生错误.
+    if (0 == *HashSize) // hash being zero means fatal mistake.
     {
         return FALSE;
     }
-    // 分配内存.
     *szBuffer = (PBYTE)calloc(*HashSize, 1);
-    // 精确计算哈希值.
     bReturn = CryptCATAdminCalcHashFromFileHandle(FileHandle, HashSize, *szBuffer, 0x00);
     if (!bReturn)
     {
@@ -1254,8 +1255,8 @@ BOOL MyCryptCalcFileHash(
 BOOL CheckFileDigitalSignature(
     LPCWSTR FilePath,
     BOOL bNoRevocation,
-    LPCWSTR CatPath,
-    std::wstring & CatFile,
+    LPCWSTR CataPath,
+    std::wstring & CataFile,
     std::string & SignType,
     std::list<SIGN_NODE_INFO> & SignChain
 )
@@ -1268,18 +1269,17 @@ BOOL CheckFileDigitalSignature(
     UINT            uiCatCount  = 0x00;
     CATALOG_INFO    InfoStruct  = { 0 };
     BOOL            bReturn     = FALSE;
-    std::wstring    TargPath;
 
-    CatFile.clear();
+    CataFile.clear();
     SignType.clear();
     InfoStruct.cbStruct = sizeof(CATALOG_INFO);
-    // 获取签名验证的环境结构.
+    // Get signature Context structure.
     bReturn = CryptCATAdminAcquireContext(&Context, NULL, 0);
     if (!bReturn)
     {
         return FALSE;
     }
-    while (!CatPath)
+    while (!CataPath)
     {
         FileHandle = CreateFileW(FilePath, GENERIC_READ,
             7,
@@ -1293,7 +1293,7 @@ BOOL CheckFileDigitalSignature(
             CryptCATAdminReleaseContext(Context, 0);
             return FALSE;
         }
-        // 计算文件哈希.
+        // calculate file hash.
         bReturn = MyCryptCalcFileHash(FileHandle, &szBuffer, &dwHashSize);
         if (!bReturn)
         {
@@ -1302,7 +1302,7 @@ BOOL CheckFileDigitalSignature(
             break;
         }
         CloseHandle(FileHandle);
-        // 获取目录环境结构.
+        // Get catalog Context structure.
         HCATINFO *p = NULL;
         for (;;)
         {
@@ -1331,39 +1331,30 @@ BOOL CheckFileDigitalSignature(
         free(szBuffer);
         break;
     }
-    // 如果不能获取信息.
-    bReturn = FALSE;
+    bReturn  = FALSE;
+    CataFile = CataPath ? CataPath : L"";
+    SignType = "embedded";
     if (CatContext)
     {
         bReturn = CryptCATCatalogInfoFromContext(CatContext, &InfoStruct, 0);
     }
-    if (CatContext && !bReturn)
+    if (bReturn)
     {
-        // 释放环境结构并设置环境结构指针为空.
-        CryptCATAdminReleaseCatalogContext(Context, CatContext, 0);
-        CatContext = NULL;
-    }
-    if (!CatContext && !CatPath)
-    {
-        SignType = "embedded";
-        CatFile  = L"";
-        TargPath = FilePath;
-    }
-    else
-    {
-        SignType = "cataloged";
-        CatFile  = CatContext ? InfoStruct.wszCatalogFile : CatPath;
-        TargPath = CatFile;
-    }
-    // 获取签名证书信息.
-    bReturn = GetSignerCertificateInfo(TargPath.c_str(), SignChain);
-    // 释放环境结构.
-    if (CatContext)
-    {
+        CataFile = InfoStruct.wszCatalogFile;
         CryptCATAdminReleaseCatalogContext(Context, CatContext, 0);
     }
-    // 释放内存.
     CryptCATAdminReleaseContext(Context, 0);
+
+    // Get certificate information.
+    bReturn = GetSignerCertificateInfo(FilePath, SignChain);
+    if (!bReturn && !CataFile.empty())
+    {
+        // If we cannot get embedded signature information,
+        // just attempt to get cataloged signature information
+        // if it has catalog.
+        SignType = "cataloged";
+        bReturn = GetSignerCertificateInfo(CataFile.c_str(), SignChain);
+    }
     return bReturn;
 }
 
@@ -1371,15 +1362,13 @@ INT wmain(INT argc, WCHAR *argv[])
 {
     INT iArgCount = 0x00;
     LPWSTR *szArgList = NULL;
-    
     szArgList = CommandLineToArgvW(GetCommandLineW(), &iArgCount);
-    if (iArgCount < 2)
+    if (iArgCount != 2)
     {
         std::cout << "Parameter error!" << endl;
         std::cout << "Usage: PESignAnalyzer.exe filepath" << endl;
         return 1;
     }
-    std::wstring targetFile = szArgList[1];
-    CertificateCheck(targetFile.c_str());
-    return 0;
+    CertificateCheck(szArgList[1]);
+    return 0x00;
 }
