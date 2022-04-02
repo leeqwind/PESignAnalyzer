@@ -3,7 +3,7 @@
  *
  * Source: PESignAnalyzer.cpp
  * Author: leeqwind
- * E-mail: leeqwind123@outlook.com
+ * E-mail: leeqw.live@outlook.com
  * Notice: This program can retrieve signature information from PE
  *         files which signed by a/some certificate(s) on Windows.
  *         Supporting multi-signed information and certificates chain.
