@@ -157,18 +157,6 @@ BOOL GetNestedSignerInfo(
         }
         pbCurrData = AuthSignData->pSignerInfo->UnauthAttrs.rgAttr[n].rgValue[0].pbData;
         cbCurrData = AuthSignData->pSignerInfo->UnauthAttrs.rgAttr[n].rgValue[0].cbData;
-        hNestedMsg = CryptMsgOpenToDecode(X509_ASN_ENCODING | PKCS_7_ASN_ENCODING,
-            0,
-            0,
-            0,
-            NULL,
-            0
-        );
-        if (!hNestedMsg) // Fatal Error
-        {
-            bSucceed = FALSE;
-            __leave;
-        }
         // Multiple nested signatures just add one attr in UnauthAttrs
         // list of the main signature pointing to the first nested si-
         // gnature. Every nested signature exists side by side in an 8
@@ -189,6 +177,24 @@ BOOL GetNestedSignerInfo(
             {
                 break;
             }
+
+            if (hNestedMsg) {
+                CryptMsgClose(hNestedMsg);
+                hNestedMsg = NULL;
+            }
+            hNestedMsg = CryptMsgOpenToDecode(X509_ASN_ENCODING | PKCS_7_ASN_ENCODING,
+                0,
+                0,
+                0,
+                NULL,
+                0
+            );
+            if (!hNestedMsg) // Fatal Error
+            {
+                bSucceed = FALSE;
+                __leave;
+            }
+
             // Big Endian -> Little Endian
             cbCurrData = XCH_WORD_LITEND(*(WORD *)(pbCurrData + 2)) + 4;
             pbNextData = pbCurrData;
