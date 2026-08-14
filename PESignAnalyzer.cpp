@@ -35,6 +35,7 @@ using namespace std;
 
 #pragma comment(lib, "Crypt32.lib")
 #pragma comment(lib, "Wintrust.lib")
+#pragma comment(lib, "Advapi32.lib")
 
 typedef struct _SIGN_COUNTER_SIGN {
     std::string SignerName;
@@ -82,6 +83,7 @@ BOOL MyCryptMsgGetParam(
     {
         return FALSE;
     }
+    *pParam = NULL;
     // Get size
     bReturn = CryptMsgGetParam(hCryptMsg, dwParamType, dwIndex, NULL, &dwSize);
     if (!bReturn)
@@ -98,6 +100,8 @@ BOOL MyCryptMsgGetParam(
     bReturn = CryptMsgGetParam(hCryptMsg, dwParamType, dwIndex, *pParam, &dwSize);
     if (!bReturn)
     {
+        LocalFree(*pParam);
+        *pParam = NULL;
         return FALSE;
     }
     if (dwOutSize)
@@ -119,7 +123,7 @@ CONST UCHAR SG_SignedData[] = {
     (WORD)(((((WORD)num) & 0xFF00) >> 8) | ((((WORD)num) & 0x00FF) << 8))
 
 #define _8BYTE_ALIGN(offset, base) \
-    (((offset + base + 7) & 0xFFFFFFF8L) - (base & 0xFFFFFFF8L))
+    (((offset + base + 7) & ~((ULONG_PTR)0x7)) - (base & ~((ULONG_PTR)0x7)))
 
 // https://msdn.microsoft.com/zh-cn/library/windows/desktop/aa374890(v=vs.85).aspx
 BOOL GetNestedSignerInfo(
@@ -134,7 +138,7 @@ BOOL GetNestedSignerInfo(
     DWORD       n           = 0x00;
     DWORD       cbCurrData  = 0x00;
 
-    if (!AuthSignData->pSignerInfo)
+    if (!AuthSignData || !AuthSignData->pSignerInfo)
     {
         return FALSE;
     }
@@ -210,7 +214,7 @@ BOOL GetNestedSignerInfo(
                 (PVOID *)&NestedHandle.pSignerInfo,
                 &NestedHandle.dwObjSize
             );
-            if (!bReturn)
+            if (!bReturn || !NestedHandle.pSignerInfo)
             {
                 continue;
             }
@@ -220,6 +224,12 @@ BOOL GetNestedSignerInfo(
                 0,
                 hNestedMsg
             );
+            if (!NestedHandle.hCertStoreHandle)
+            {
+                LocalFree(NestedHandle.pSignerInfo);
+                NestedHandle.pSignerInfo = NULL;
+                continue;
+            }
             bSucceed = TRUE;
             NestedChain.push_back(NestedHandle);
         }
@@ -313,6 +323,8 @@ BOOL GetCounterSignerInfo(
         );
         if (!bReturn)
         {
+            LocalFree(*pTargetSigner);
+            *pTargetSigner = NULL;
             bSucceed = FALSE;
             __leave;
         }
@@ -430,20 +442,29 @@ BOOL ParseDERSize(
     DWORD & dwSizefound,
     DWORD & dwBytesParsed
 ) {
-    if (pbSignature[0] > 0x80 &&
-        !SafeToReadNBytes(dwSize, 1, pbSignature[0] - 0x80))
+    if (dwSize < 1)
     {
         return FALSE;
     }
-    if (pbSignature[0] <= 0x80)
+    if (pbSignature[0] >= 0x80 &&
+        !SafeToReadNBytes(dwSize, 1, pbSignature[0] & 0x7F))
+    {
+        return FALSE;
+    }
+    if (pbSignature[0] < 0x80)
     {
         dwSizefound = pbSignature[0];
         dwBytesParsed = 1;
     }
     else
     {
-        dwSizefound = ReadNumberFromNBytes(pbSignature, 1, pbSignature[0] - 0x80);
-        dwBytesParsed = 1 + pbSignature[0] - 0x80;
+        DWORD cbLengthBytes = pbSignature[0] & 0x7F;
+        if (cbLengthBytes > sizeof(DWORD))
+        {
+            return FALSE;
+        }
+        dwSizefound = ReadNumberFromNBytes(pbSignature, 1, cbLengthBytes);
+        dwBytesParsed = 1 + cbLengthBytes;
     }
     return TRUE;
 }
@@ -578,7 +599,6 @@ BOOL GetGeneralizedTimeStamp(
     PCMSG_SIGNER_INFO pSignerInfo,
     std::string & TimeStamp
 ) {
-    BOOL        bSucceed        = FALSE;
     BOOL        bReturn         = FALSE;
     DWORD       dwPositionFound = 0;
     DWORD       dwLengthFound   = 0;
@@ -587,6 +607,7 @@ BOOL GetGeneralizedTimeStamp(
     INT         iTypeError      = 0;
     SYSTEMTIME  sst, lst;
     FILETIME    fft, lft;
+    CHAR        szBuffer[256]   = { 0 };
 
     ULONG wYear         = 0;
     ULONG wMonth        = 0;
@@ -630,10 +651,13 @@ BOOL GetGeneralizedTimeStamp(
     {
         return FALSE;
     }
-    CHAR szBuffer[256];
-    strncpy_s(szBuffer, (CHAR *)&(pbOctetString[dwPositionFound]), dwLengthFound);
+    if (dwLengthFound >= sizeof(szBuffer))
+    {
+        return FALSE;
+    }
+    memcpy_s(szBuffer, sizeof(szBuffer), (CHAR *)&(pbOctetString[dwPositionFound]), dwLengthFound);
     szBuffer[dwLengthFound] = 0;
-    _snscanf_s(szBuffer, 256, "%04d%02d%02d%02d%02d%02d.%03dZ",
+    int iFields = _snscanf_s(szBuffer, (int)_countof(szBuffer), "%04d%02d%02d%02d%02d%02d.%03dZ",
         &wYear,
         &wMonth,
         &wDay,
@@ -642,6 +666,27 @@ BOOL GetGeneralizedTimeStamp(
         &wSecond,
         &wMilliseconds
     );
+    if (iFields < 6)
+    {
+        iFields = _snscanf_s(szBuffer, (int)_countof(szBuffer), "%04d%02d%02d%02d%02d%02dZ",
+            &wYear,
+            &wMonth,
+            &wDay,
+            &wHour,
+            &wMinute,
+            &wSecond
+        );
+        if (iFields < 6)
+        {
+            return FALSE;
+        }
+        wMilliseconds = 0;
+    }
+    if (wYear < 1970 || wYear > 9999 || wMonth < 1 || wMonth > 12 ||
+        wDay < 1 || wDay > 31 || wHour > 23 || wMinute > 59 || wSecond > 59)
+    {
+        return FALSE;
+    }
     sst.wYear         = (WORD)wYear;
     sst.wMonth        = (WORD)wMonth;
     sst.wDay          = (WORD)wDay;
@@ -649,7 +694,10 @@ BOOL GetGeneralizedTimeStamp(
     sst.wMinute       = (WORD)wMinute;
     sst.wSecond       = (WORD)wSecond;
     sst.wMilliseconds = (WORD)wMilliseconds;
-    SystemTimeToFileTime(&sst, &fft);
+    if (!SystemTimeToFileTime(&sst, &fft))
+    {
+        return FALSE;
+    }
     FileTimeToLocalFileTime(&fft, &lft);
     FileTimeToSystemTime(&lft, &lst);
     TimeStamp = TimeToString(NULL, &lst);
@@ -676,17 +724,16 @@ BOOL GetStringFromCertContext(
 ) {
     DWORD dwData      = 0x00;
     LPSTR pszTempName = NULL;
+    BOOL  bResult     = FALSE;
 
     dwData = CertGetNameStringA(pCertContext, Type, Flag, NULL, NULL, 0);
     if (!dwData)
     {
-        CertFreeCertificateContext(pCertContext);
         return FALSE;
     }
     pszTempName = (LPSTR)LocalAlloc(LPTR, dwData * sizeof(CHAR));
     if (!pszTempName)
     {
-        CertFreeCertificateContext(pCertContext);
         return FALSE;
     }
     dwData = CertGetNameStringA(pCertContext, Type, Flag, NULL, pszTempName, dwData);
@@ -744,6 +791,14 @@ BOOL CalculateDigestAlgorithm(
     {
         Algorithm = "SHA256";
     }
+    else if (!strcmp(pszObjId, szOID_NIST_sha384))
+    {
+        Algorithm = "SHA384";
+    }
+    else if (!strcmp(pszObjId, szOID_NIST_sha512))
+    {
+        Algorithm = "SHA512";
+    }
     else
     {
         Algorithm = std::string(pszObjId);
@@ -784,6 +839,30 @@ BOOL CalculateCertAlgorithm(
     {
         Algorithm = "sha256RSA(RSA)";
     }
+    else if (0 == strcmp(pszObjId, szOID_RSA_SHA384RSA))
+    {
+        Algorithm = "sha384RSA(RSA)";
+    }
+    else if (0 == strcmp(pszObjId, szOID_RSA_SHA512RSA))
+    {
+        Algorithm = "sha512RSA(RSA)";
+    }
+    else if (0 == strcmp(pszObjId, szOID_ECDSA_SHA1))
+    {
+        Algorithm = "sha1ECDSA(ECDSA)";
+    }
+    else if (0 == strcmp(pszObjId, szOID_ECDSA_SHA256))
+    {
+        Algorithm = "sha256ECDSA(ECDSA)";
+    }
+    else if (0 == strcmp(pszObjId, szOID_ECDSA_SHA384))
+    {
+        Algorithm = "sha384ECDSA(ECDSA)";
+    }
+    else if (0 == strcmp(pszObjId, szOID_ECDSA_SHA512))
+    {
+        Algorithm = "sha512ECDSA(ECDSA)";
+    }
     else
     {
         Algorithm = pszObjId;
@@ -792,9 +871,13 @@ BOOL CalculateCertAlgorithm(
     return TRUE;
 }
 
-#define SHA1LEN  20
-#define BUFSIZE  2048
-#define MD5LEN   16
+#define SHA1LEN    20
+#define SHA256LEN  32
+#define SHA384LEN  48
+#define SHA512LEN  64
+#define BUFSIZE    2048
+#define MD5LEN     16
+#define MAX_HASHLEN 64
 
 BOOL CalculateHashOfBytes(
     BYTE *pbBinary,
@@ -803,53 +886,72 @@ BOOL CalculateHashOfBytes(
     std::string & Hash
 ) {
     BOOL        bReturn             = FALSE;
-    DWORD       dwLastError         = 0;
     HCRYPTPROV  hProv               = 0;
     HCRYPTHASH  hHash               = 0;
     DWORD       cbHash              = 0;
-    BYTE        rgbHash[SHA1LEN]    = { 0 };
+    BYTE        rgbHash[MAX_HASHLEN] = { 0 };
     CHAR        hexbyte[3]          = { 0 };
     CONST CHAR  rgbDigits[]         = "0123456789abcdef";
     std::string CalcHash;
 
-    bReturn = CryptAcquireContext(&hProv, NULL, NULL, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT);
+    bReturn = CryptAcquireContext(&hProv, NULL, NULL, PROV_RSA_AES, CRYPT_VERIFYCONTEXT);
     if (!bReturn)
     {
-        dwLastError = GetLastError();
-        return FALSE;
+        // Fallback to PROV_RSA_FULL if PROV_RSA_AES is not available
+        bReturn = CryptAcquireContext(&hProv, NULL, NULL, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT);
+        if (!bReturn)
+        {
+            return FALSE;
+        }
     }
     bReturn = CryptCreateHash(hProv, Algid, 0, 0, &hHash);
     if (!bReturn)
     {
-        dwLastError = GetLastError();
         CryptReleaseContext(hProv, 0);
         return FALSE;
     }
     bReturn = CryptHashData(hHash, pbBinary, dwBinary, 0);
     if (!bReturn)
     {
-        dwLastError = GetLastError();
         CryptDestroyHash(hHash);
         CryptReleaseContext(hProv, 0);
         return FALSE;
     }
-    if (CALG_SHA1 == Algid)
+    switch (Algid)
     {
+    case CALG_SHA1:
         cbHash = SHA1LEN;
-    }
-    else if (CALG_MD5 == Algid)
-    {
+        break;
+    case CALG_MD5:
         cbHash = MD5LEN;
-    }
-    else
+        break;
+    case CALG_SHA_256:
+        cbHash = SHA256LEN;
+        break;
+    case CALG_SHA_384:
+        cbHash = SHA384LEN;
+        break;
+    case CALG_SHA_512:
+        cbHash = SHA512LEN;
+        break;
+    default:
     {
-        cbHash = 0;
+        // Query the actual hash size
+        DWORD dwParamSize = sizeof(cbHash);
+        bReturn = CryptGetHashParam(hHash, HP_HASHSIZE, (BYTE*)&cbHash, &dwParamSize, 0);
+        if (!bReturn || cbHash == 0 || cbHash > MAX_HASHLEN)
+        {
+            CryptDestroyHash(hHash);
+            CryptReleaseContext(hProv, 0);
+            return FALSE;
+        }
+        break;
+    }
     }
     hexbyte[2] = '\0';
     bReturn = CryptGetHashParam(hHash, HP_HASHVAL, rgbHash, &cbHash, 0);
     if (!bReturn)
     {
-        dwLastError = GetLastError();
         CryptDestroyHash(hHash);
         CryptReleaseContext(hProv, 0);
         return FALSE;
@@ -872,12 +974,10 @@ BOOL CalculateCertCRLpoint(
     std::wstring & CRLpoint
 ) {
     BOOL                    bReturn         = FALSE;
-    BYTE                    btData[512]     = { 0 };
-    WCHAR                   csProperty[512] = { 0 };
-    ULONG                   ulDataLen       = 512;
-    PCRL_DIST_POINTS_INFO   pCRLDistPoint   = (PCRL_DIST_POINTS_INFO)btData;
+    PCRL_DIST_POINTS_INFO   pCRLDistPoint   = NULL;
     PCRL_DIST_POINT_NAME    dpn             = NULL;
     PCERT_EXTENSION         pe              = NULL;
+    ULONG                   ulDataLen       = 0;
 
     CRLpoint.clear();
     pe = CertFindExtension(szOID_CRL_DIST_POINTS, cExtensions, rgExtensions);
@@ -885,29 +985,52 @@ BOOL CalculateCertCRLpoint(
     {
         return FALSE;
     }
+    // First query required size
     bReturn = CryptDecodeObject(MY_ENCODING, szOID_CRL_DIST_POINTS,
         pe->Value.pbData,
         pe->Value.cbData,
-        CRYPT_DECODE_NOCOPY_FLAG,
-        pCRLDistPoint, &ulDataLen
+        CRYPT_DECODE_NOCOPY_FLAG | CRYPT_DECODE_ALLOC_FLAG,
+        NULL, &ulDataLen
     );
-    if (!bReturn)
+    if (!bReturn || ulDataLen == 0)
     {
         return FALSE;
     }
+    // Allocate from heap to avoid stack overflow
+    pCRLDistPoint = (PCRL_DIST_POINTS_INFO)LocalAlloc(LPTR, ulDataLen);
+    if (!pCRLDistPoint)
+    {
+        return FALSE;
+    }
+    bReturn = CryptDecodeObject(MY_ENCODING, szOID_CRL_DIST_POINTS,
+        pe->Value.pbData,
+        pe->Value.cbData,
+        CRYPT_DECODE_NOCOPY_FLAG | CRYPT_DECODE_ALLOC_FLAG,
+        &pCRLDistPoint, &ulDataLen
+    );
+    if (!bReturn)
+    {
+        LocalFree(pCRLDistPoint);
+        return FALSE;
+    }
+    std::wstring csProperty;
     for (ULONG idx = 0; idx < pCRLDistPoint->cDistPoint; idx++)
     {
         dpn = &pCRLDistPoint->rgDistPoint[idx].DistPointName;
         for (ULONG ulAltEntry = 0; ulAltEntry < dpn->FullName.cAltEntry; ulAltEntry++)
         {
-            if (wcslen(csProperty) > 0)
+            if (!csProperty.empty() && dpn->FullName.rgAltEntry[ulAltEntry].pwszURL)
             {
-                wcscat_s(csProperty, 512, L";");
+                csProperty += L";";
             }
-            wcscat_s(csProperty, 512, dpn->FullName.rgAltEntry[ulAltEntry].pwszURL);
+            if (dpn->FullName.rgAltEntry[ulAltEntry].pwszURL)
+            {
+                csProperty += dpn->FullName.rgAltEntry[ulAltEntry].pwszURL;
+            }
         }
     }
     CRLpoint = csProperty;
+    LocalFree(pCRLDistPoint);
     return TRUE;
 }
 
@@ -956,41 +1079,54 @@ BOOL GetSignerSignatureInfo(
     PCCERT_CONTEXT & pCurrContext,
     SIGN_NODE_INFO & SignNode
 ) {
-    BOOL            bReturn   = FALSE;
     PCERT_INFO      pCertInfo = pCurrContext->pCertInfo;
     LPCSTR          szObjId   = NULL;
     CERT_NODE_INFO  CertNode;
 
     // Get certificate algorithm.
     szObjId = pCertInfo->SignatureAlgorithm.pszObjId;
-    bReturn = CalculateCertAlgorithm(szObjId, CertNode.SignAlgorithm);
+    if (!CalculateCertAlgorithm(szObjId, CertNode.SignAlgorithm))
+    {
+        CertNode.SignAlgorithm = "Unknown";
+    }
     // Get certificate serial.
-    bReturn = CalculateSignSerial(pCertInfo->SerialNumber.pbData,
+    if (!CalculateSignSerial(pCertInfo->SerialNumber.pbData,
         pCertInfo->SerialNumber.cbData,
         CertNode.Serial
-    );
+    )) {
+        CertNode.Serial = "";
+    }
     // Get certificate version.
-    bReturn = CalculateSignVersion(pCertInfo->dwVersion, CertNode.Version);
+    if (!CalculateSignVersion(pCertInfo->dwVersion, CertNode.Version))
+    {
+        CertNode.Version = "Unknown";
+    }
     // Get certficate subject.
-    bReturn = GetStringFromCertContext(pCurrContext,
+    if (!GetStringFromCertContext(pCurrContext,
         CERT_NAME_SIMPLE_DISPLAY_TYPE,
         0,
         CertNode.SubjectName
-    );
+    )) {
+        CertNode.SubjectName = "";
+    }
     // Get certificate issuer.
-    bReturn = GetStringFromCertContext(pCurrContext,
+    if (!GetStringFromCertContext(pCurrContext,
         CERT_NAME_SIMPLE_DISPLAY_TYPE,
         CERT_NAME_ISSUER_FLAG,
         CertNode.IssuerName
-    );
+    )) {
+        CertNode.IssuerName = "";
+    }
     // Get certificate thumbprint.
-    bReturn = CalculateHashOfBytes(pCurrContext->pbCertEncoded,
+    if (!CalculateHashOfBytes(pCurrContext->pbCertEncoded,
         CALG_SHA1,
         pCurrContext->cbCertEncoded,
         CertNode.Thumbprint
-    );
+    )) {
+        CertNode.Thumbprint = "";
+    }
     // Get certificate CRL point.
-    bReturn = CalculateCertCRLpoint(pCertInfo->cExtension,
+    CalculateCertCRLpoint(pCertInfo->cExtension,
         pCertInfo->rgExtension,
         CertNode.CRLpoint
     );
@@ -1118,10 +1254,14 @@ BOOL GetSignerCertificateInfo(
         }
         // Get digest algorithm.
         szObjId = iter->pSignerInfo->HashAlgorithm.pszObjId;
-        bReturn = CalculateDigestAlgorithm(szObjId, SignNode.DigestAlgorithm);
+        CalculateDigestAlgorithm(szObjId, SignNode.DigestAlgorithm);
         // Get signature version.
-        bReturn = CalculateSignVersion(iter->pSignerInfo->dwVersion, SignNode.Version);
+        CalculateSignVersion(iter->pSignerInfo->dwVersion, SignNode.Version);
         // Find the first certificate Context information.
+        // NOTE: CMSG_SIGNER_INFO.Issuer == the issuer of the signer cert
+        // (the CA subject name). CERT_FIND_ISSUER_NAME finds the cert
+        // whose ISSUER field matches the given name, which is our leaf
+        // signer certificate (its issuer == SignerInfo.Issuer).
         pCurrContext = CertFindCertificateInStore(iter->hCertStoreHandle,
             MY_ENCODING,
             0,
@@ -1158,22 +1298,32 @@ BOOL MyCryptCalcFileHash(
     DWORD *HashSize
 ) {
     BOOL bReturn = FALSE;
-    if (!szBuffer || !HashSize)
+    if (!szBuffer || !HashSize || INVALID_HANDLE_VALUE == FileHandle)
     {
         return FALSE;
     }
+    *szBuffer = NULL;
     *HashSize = 0x00;
-    // Get size.
-    bReturn = CryptCATAdminCalcHashFromFileHandle(FileHandle, HashSize, NULL, 0x00);
+    // Get size. Note: Many Windows Crypto APIs return FALSE
+    // when querying the required buffer size (ERROR_INSUFFICIENT_BUFFER),
+    // but still output the correct size. So only check HashSize output here.
+    CryptCATAdminCalcHashFromFileHandle(FileHandle, HashSize, NULL, 0x00);
     if (0 == *HashSize) // HashSize being zero means fatal error.
     {
         return FALSE;
     }
     *szBuffer = (PBYTE)calloc(*HashSize, 1);
+    if (!*szBuffer)
+    {
+        *HashSize = 0;
+        return FALSE;
+    }
     bReturn = CryptCATAdminCalcHashFromFileHandle(FileHandle, HashSize, *szBuffer, 0x00);
     if (!bReturn)
     {
         free(*szBuffer);
+        *szBuffer = NULL;
+        *HashSize = 0;
     }
     return bReturn;
 }
@@ -1185,8 +1335,9 @@ BOOL CheckFileDigitalSignature(
     std::string & SignType,
     std::list<SIGN_NODE_INFO> & SignChain
 ) {
-    PVOID   Context = NULL;
-    BOOL    bReturn = FALSE;
+    PVOID   Context      = NULL;
+    BOOL    bReturn      = FALSE;
+    BOOL    bHasCatalog  = FALSE;
 
     CataFile = CataPath ? CataPath : L"";
     SignType = "embedded";
@@ -1196,6 +1347,7 @@ BOOL CheckFileDigitalSignature(
         // Skip getting catalog Context if CataPath is specified.
         if (CataPath)
         {
+            bHasCatalog = !CataFile.empty();
             break;
         }
         // Acquire signature Context structure.
@@ -1206,7 +1358,7 @@ BOOL CheckFileDigitalSignature(
         }
         // Open the specified file handle to get the file hash.
         HANDLE FileHandle = CreateFileW(FilePath, GENERIC_READ,
-            7,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
             NULL,
             OPEN_EXISTING,
             FILE_FLAG_BACKUP_SEMANTICS,
@@ -1221,28 +1373,54 @@ BOOL CheckFileDigitalSignature(
         PBYTE szBuffer   = NULL;
         bReturn = MyCryptCalcFileHash(FileHandle, &szBuffer, &dwHashSize);
         CloseHandle(FileHandle);
-        if (!bReturn)
+        FileHandle = INVALID_HANDLE_VALUE;
+        if (!bReturn || !szBuffer || 0 == dwHashSize)
         {
+            if (szBuffer) free(szBuffer);
             break;
         }
         // Get catalog Context structure.
+        // First pass: count catalogs (and release them on the fly).
+        // Note: CryptCATAdminEnumCatalogFromHash sets *ppPrevCatalogInfo to NULL on output.
         UINT     uiCataLimit = 0x00;
         HCATINFO CataContext = NULL;
-        do
+        HCATINFO CataContextNext = NULL;
+        CataContextNext = CryptCATAdminEnumCatalogFromHash(Context,
+            szBuffer,
+            dwHashSize,
+            0,
+            NULL
+        );
+        while (CataContextNext)
         {
-            // Probe catalog Context structure layer.
-            CataContext = CryptCATAdminEnumCatalogFromHash(Context,
+            if (CataContext)
+            {
+                CryptCATAdminReleaseCatalogContext(Context, CataContext, 0);
+            }
+            CataContext = CataContextNext;
+            uiCataLimit++;
+            CataContextNext = CryptCATAdminEnumCatalogFromHash(Context,
                 szBuffer,
                 dwHashSize,
                 0,
-                uiCataLimit == 0 ? NULL : &CataContext
+                &CataContext
             );
-            uiCataLimit++;
-        } while (CataContext);
-        uiCataLimit--;
+            // After call, CataContext has been set to NULL by the API.
+        }
+        if (CataContext)
+        {
+            CryptCATAdminReleaseCatalogContext(Context, CataContext, 0);
+            CataContext = NULL;
+        }
+        // Second pass: re-enumerate to the last catalog (uiCataLimit-th entry).
         for (UINT uiIter = 0; uiIter < uiCataLimit; uiIter++)
         {
-            // Get specified catalog Context structure.
+            // Release previous to avoid leak in second pass.
+            if (CataContext)
+            {
+                CryptCATAdminReleaseCatalogContext(Context, CataContext, 0);
+                CataContext = NULL;
+            }
             CataContext = CryptCATAdminEnumCatalogFromHash(Context,
                 szBuffer,
                 dwHashSize,
@@ -1251,32 +1429,34 @@ BOOL CheckFileDigitalSignature(
             );
         }
         free(szBuffer);
+        szBuffer = NULL;
         if (!CataContext)
         {
             break;
         }
-        // Get catalog information.
+        // Get catalog information from the last catalog found.
         CATALOG_INFO CataInfo = { 0 };
         CataInfo.cbStruct = sizeof(CATALOG_INFO);
         bReturn = CryptCATCatalogInfoFromContext(CataContext, &CataInfo, 0);
         if (bReturn)
         {
             CataFile = CataInfo.wszCatalogFile;
+            bHasCatalog = !CataFile.empty();
         }
         // Release catalog Context structure.
-        bReturn = CryptCATAdminReleaseCatalogContext(Context, CataContext, 0);
+        CryptCATAdminReleaseCatalogContext(Context, CataContext, 0);
         CataContext = NULL;
     } while (FALSE);
     if (Context)
     {
         // Release signature Context structure.
-        bReturn = CryptCATAdminReleaseContext(Context, 0);
+        CryptCATAdminReleaseContext(Context, 0);
         Context = NULL;
     }
 
     // Get certificate information.
     bReturn = GetSignerCertificateInfo(FilePath, SignChain);
-    if (!bReturn && !CataFile.empty())
+    if (!bReturn && bHasCatalog)
     {
         // If we cannot get embedded signature information, we
         // just attempt to get cataloged signature information
