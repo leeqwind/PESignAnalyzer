@@ -62,11 +62,122 @@ digestAlgorithm: SHA256
 
 ## Compiling
 
-编译
+### Method 1: Visual Studio / MSBuild (Recommended)
 
-Developer can compile this program with Microsoft Visual Studio 2008 or later version Visual Studio. The target binary file will be built at Debug or Release folder, depending on which compiling method developers select.
+Open the project file with Microsoft Visual Studio 2008 or later (VS2013, VS2015, VS2017, VS2019, VS2022 all supported). The repository ships two ready-to-use project files under the `MSVC/` folder:
 
-开发者可以通过Microsoft Visual Studio 2008或更新版本的Visual Studio来编译这个程序。目标二进制文件会在Debug或Release目录生成，这取决于开发者选择何种编译方式。
+- `MSVC/PESignAnalyzer_VS2013.vcxproj`
+- `MSVC/PESignAnalyzer_VS2015.vcxproj`
+
+From the command line you can also build directly with MSBuild:
+
+```cmd
+:: x64 Release
+MSBuild MSVC\PESignAnalyzer_VS2015.vcxproj /p:Configuration=Release /p:Platform=x64
+
+:: x86 Debug
+MSBuild MSVC\PESignAnalyzer_VS2015.vcxproj /p:Configuration=Debug   /p:Platform=Win32
+```
+
+The output binary will be placed under the `Debug\` or `Release\` folder next to the solution.
+
+### Method 2: Directly invoke cl.exe (Visual Studio Build Tools)
+
+If you only have the Visual Studio Build Tools installed (no IDE), you can compile the single source file from the Developer Command Prompt:
+
+```cmd
+:: (1) Set up the build environment (choose the vcvars matching your tools version)
+call "C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
+
+:: (2) Compile. Crypt32.lib / Wintrust.lib / Advapi32.lib are also auto-imported
+::     via #pragma comment(lib, ...) inside the source, so listing them on the
+::     command line is optional but kept for explicitness.
+cl.exe /EHsc /nologo /W3 /DUNICODE /D_UNICODE PESignAnalyzer.cpp ^
+       Crypt32.lib Wintrust.lib Advapi32.lib /Fe:PESignAnalyzer.exe
+```
+
+Compiler flags explained:
+
+| Flag | Purpose |
+|------|---------|
+| `/EHsc` | Enables standard C++ exception handling (required by `std::string`, `std::list`) |
+| `/W3`  | Warning level 3 (matches the project default in `.vcxproj`) |
+| `/DUNICODE /D_UNICODE` | Selects the Unicode character set, since the entry point is `wmain` |
+| `/Fe:<name>` | Names the output executable |
+
+Required import libraries:
+
+| Library | APIs it provides |
+|---------|------------------|
+| `Crypt32.lib`  | `Cert*`, `CryptMsg*`, `CryptDecodeObject*` (CryptoAPI / certificate store) |
+| `Wintrust.lib` | `CryptCATAdmin*` (catalog / WinTrust helpers) |
+| `Advapi32.lib` | Legacy CryptoAPI: `CryptAcquireContext`, `CryptCreateHash`, `CryptHashData`, `CryptGetHashParam` ... |
+
+After a successful build, run it against any system binary to confirm:
+
+```cmd
+PESignAnalyzer.exe C:\Windows\System32\notepad.exe
+```
+
+---
+
+### 编译
+
+开发者可以通过 Microsoft Visual Studio 2008 或更新版本的 Visual Studio 来编译这个程序。仓库在 `MSVC/` 目录下提供了两份现成的工程文件：
+
+- `MSVC/PESignAnalyzer_VS2013.vcxproj`
+- `MSVC/PESignAnalyzer_VS2015.vcxproj`
+
+### 方式一：Visual Studio / MSBuild（推荐）
+
+直接双击 `.vcxproj` 用 IDE 打开，或在命令行中使用 MSBuild 编译：
+
+```cmd
+:: x64 Release
+MSBuild MSVC\PESignAnalyzer_VS2015.vcxproj /p:Configuration=Release /p:Platform=x64
+
+:: x86 Debug
+MSBuild MSVC\PESignAnalyzer_VS2015.vcxproj /p:Configuration=Debug   /p:Platform=Win32
+```
+
+编译产物默认会生成在解决方案目录下的 `Debug\` 或 `Release\` 文件夹中。
+
+### 方式二：直接调用 cl.exe（Visual Studio Build Tools）
+
+如果只安装了 Visual Studio Build Tools（未装 IDE），可以在「开发人员命令提示符」中通过单文件命令直接编译：
+
+```cmd
+:: (1) 配置编译环境（按实际工具链版本选择 vcvars 路径）
+call "C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
+
+:: (2) 编译。Crypt32.lib / Wintrust.lib / Advapi32.lib 已通过源码顶部的
+::     #pragma comment(lib, ...) 自动引入，命令行中显式列出是为了便于理解。
+cl.exe /EHsc /nologo /W3 /DUNICODE /D_UNICODE PESignAnalyzer.cpp ^
+       Crypt32.lib Wintrust.lib Advapi32.lib /Fe:PESignAnalyzer.exe
+```
+
+编译参数说明：
+
+| 参数 | 作用 |
+|------|------|
+| `/EHsc` | 启用标准 C++ 异常处理（代码中使用了 `std::string`、`std::list`） |
+| `/W3`  | 警告级别 3（与 `.vcxproj` 工程默认配置一致） |
+| `/DUNICODE /D_UNICODE` | 选择 Unicode 字符集，入口函数为 `wmain` |
+| `/Fe:<名字>` | 指定输出可执行文件的文件名 |
+
+所需链接库：
+
+| 库 | 提供的 API |
+|----|-----------|
+| `Crypt32.lib`  | `Cert*`、`CryptMsg*`、`CryptDecodeObject*`（证书、消息、解码） |
+| `Wintrust.lib` | `CryptCATAdmin*`（Catalog / 目录签名相关） |
+| `Advapi32.lib` | Legacy CryptoAPI：`CryptAcquireContext`、`CryptCreateHash`、`CryptHashData`、`CryptGetHashParam` 等 |
+
+编译成功后可以用任意系统文件验证输出：
+
+```cmd
+PESignAnalyzer.exe C:\Windows\System32\notepad.exe
+```
 
 ## Multi-signed Supporting
 
