@@ -1347,6 +1347,38 @@ BOOL MyCryptCalcFileHash(
     return bReturn;
 }
 
+typedef BOOL (WINAPI *PFN_CRYPTCATADMINACQUIRECONTEXT2)(
+    HCATADMIN *, const GUID *, PCWSTR, PCCERT_STRONG_SIGN_PARA, DWORD);
+
+BOOL MyCryptCATAdminAcquireContext(
+    HCATADMIN *Context,
+    LPCWSTR HashAlgorithm
+) {
+    if (!Context)
+    {
+        return FALSE;
+    }
+    *Context = NULL;
+    if (HashAlgorithm)
+    {
+        HMODULE hWintrust = GetModuleHandleW(L"wintrust.dll");
+        PFN_CRYPTCATADMINACQUIRECONTEXT2 pAcquireContext2 = hWintrust ?
+            (PFN_CRYPTCATADMINACQUIRECONTEXT2)GetProcAddress(hWintrust,
+                "CryptCATAdminAcquireContext2") : NULL;
+        if (pAcquireContext2)
+        {
+            return pAcquireContext2(Context, NULL, HashAlgorithm, NULL, 0);
+        }
+        // Windows versions before AcquireContext2 only support the legacy
+        // default catalog hash algorithm.
+        if (lstrcmpiW(HashAlgorithm, L"SHA1") != 0)
+        {
+            return FALSE;
+        }
+    }
+    return CryptCATAdminAcquireContext(Context, NULL, 0);
+}
+
 BOOL CheckFileDigitalSignature(
     LPCWSTR FilePath,
     LPCWSTR CataPath,
@@ -1354,27 +1386,33 @@ BOOL CheckFileDigitalSignature(
     std::string & SignType,
     std::list<SIGN_NODE_INFO> & SignChain
 ) {
-    PVOID   Context      = NULL;
+    HCATADMIN Context     = NULL;
     BOOL    bReturn      = FALSE;
     BOOL    bHasCatalog  = FALSE;
 
     CataFile = CataPath ? CataPath : L"";
     SignType = "embedded";
 
-    do
+    if (CataPath)
     {
-        // Skip getting catalog Context if CataPath is specified.
-        if (CataPath)
+        bHasCatalog = !CataFile.empty();
+    }
+    else
+    {
+        LPCWSTR HashAlgorithms[] = { L"SHA256", L"SHA1" };
+        for (UINT hashIndex = 0;
+            hashIndex < _countof(HashAlgorithms) && !bHasCatalog;
+            hashIndex++)
         {
-            bHasCatalog = !CataFile.empty();
-            break;
-        }
-        // Acquire signature Context structure.
-        bReturn = CryptCATAdminAcquireContext(&Context, NULL, 0);
-        if (!bReturn)
-        {
-            break;
-        }
+            do
+            {
+                // Acquire a catalog context for the requested hash algorithm.
+                bReturn = MyCryptCATAdminAcquireContext(&Context,
+                    HashAlgorithms[hashIndex]);
+                if (!bReturn)
+                {
+                    break;
+                }
         // Open the specified file handle to get the file hash.
         HANDLE FileHandle = CreateFileW(FilePath, GENERIC_READ,
             FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
@@ -1462,15 +1500,16 @@ BOOL CheckFileDigitalSignature(
             CataFile = CataInfo.wszCatalogFile;
             bHasCatalog = !CataFile.empty();
         }
-        // Release catalog Context structure.
-        CryptCATAdminReleaseCatalogContext(Context, CataContext, 0);
-        CataContext = NULL;
-    } while (FALSE);
-    if (Context)
-    {
-        // Release signature Context structure.
-        CryptCATAdminReleaseContext(Context, 0);
-        Context = NULL;
+                // Release catalog Context structure.
+                CryptCATAdminReleaseCatalogContext(Context, CataContext, 0);
+                CataContext = NULL;
+            } while (FALSE);
+            if (Context)
+            {
+                CryptCATAdminReleaseContext(Context, 0);
+                Context = NULL;
+            }
+        }
     }
 
     // Get certificate information.
