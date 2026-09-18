@@ -1396,7 +1396,7 @@ BOOL MyCryptCATAdminAcquireContext(
     return CryptCATAdminAcquireContext(Context, NULL, 0);
 }
 
-BOOL CheckFileDigitalSignature(
+BOOL AnalyzeFileDigitalSignature(
     LPCWSTR FilePath,
     LPCWSTR CataPath,
     std::wstring & CataFile,
@@ -1520,7 +1520,7 @@ INT wmain(INT argc, WCHAR *argv[])
 
     pwzFilePath = argv[1];
     std::wcout << L"filepath: " << pwzFilePath << endl;
-    bReturn = CheckFileDigitalSignature(pwzFilePath, NULL, CataFile, SignType, SignChain);
+    bReturn = AnalyzeFileDigitalSignature(pwzFilePath, NULL, CataFile, SignType, SignChain);
     if (!bReturn)
     {
         std::cout << "signtype: " << "none" << endl;

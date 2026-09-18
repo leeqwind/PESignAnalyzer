@@ -6,11 +6,18 @@ This program is used to get signature information from PE files which signed by 
 
 This code uses `CryptoAPIs` to parse the signature and certificate data from specified file, supporting many file types, such as .exe, .cat(catalog file), .dll, .sys, etc.
 
+> **Important:** PESignAnalyzer extracts signature metadata. It does not verify
+> file integrity, certificate trust, revocation status, or signing policy. Use
+> `WinVerifyTrust` when a security decision depends on signature validity.
+
 一个简单的PE文件签名信息提取工具。
 
 这个程序用来从由1个或多个嵌入式代码签名证书所签名的PE文件中获取签名信息。支持多签名文件信息和证书链的提取。运行在Windows Vista，Windows 7，及更新的操作系统平台。
 
 这份代码使用`CryptoAPIs`来解析指定文件中的签名和证书数据，支持多种文件类型，包括exe，cat（catalog文件），dll，sys等格式。
+
+> **重要：** PESignAnalyzer 只提取签名元数据，不验证文件完整性、证书信任、
+> 吊销状态或签名策略。如需依据签名有效性作安全决策，请使用 `WinVerifyTrust`。
 
 ## Running Demo
 
