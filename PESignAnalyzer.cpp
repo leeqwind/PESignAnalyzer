@@ -411,7 +411,7 @@ BOOL SafeToReadNBytes(
     DWORD dwStart,
     DWORD dwRequestSize
 ) {
-    return dwSize - dwStart >= dwRequestSize;
+    return dwStart <= dwSize && dwRequestSize <= dwSize - dwStart;
 }
 
 void ParseDERType(
