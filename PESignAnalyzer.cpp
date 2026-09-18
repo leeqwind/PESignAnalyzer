@@ -989,7 +989,7 @@ BOOL CalculateCertCRLpoint(
     bReturn = CryptDecodeObject(MY_ENCODING, szOID_CRL_DIST_POINTS,
         pe->Value.pbData,
         pe->Value.cbData,
-        CRYPT_DECODE_NOCOPY_FLAG | CRYPT_DECODE_ALLOC_FLAG,
+        CRYPT_DECODE_NOCOPY_FLAG,
         NULL, &ulDataLen
     );
     if (!bReturn || ulDataLen == 0)
@@ -1005,8 +1005,8 @@ BOOL CalculateCertCRLpoint(
     bReturn = CryptDecodeObject(MY_ENCODING, szOID_CRL_DIST_POINTS,
         pe->Value.pbData,
         pe->Value.cbData,
-        CRYPT_DECODE_NOCOPY_FLAG | CRYPT_DECODE_ALLOC_FLAG,
-        &pCRLDistPoint, &ulDataLen
+        CRYPT_DECODE_NOCOPY_FLAG,
+        pCRLDistPoint, &ulDataLen
     );
     if (!bReturn)
     {
