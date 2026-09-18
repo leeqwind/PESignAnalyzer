@@ -146,11 +146,25 @@ if (Test-Path -LiteralPath $catalogPath) {
     $signature = Get-AuthenticodeSignature -LiteralPath $catalogPath
     if ($signature.SignatureType -eq 'Catalog') {
         $catalog = Invoke-Analyzer $catalogPath
-        if ($catalog.ExitCode -ne 1) {
-            throw 'Strict mode unexpectedly performed automatic catalog discovery.'
+        if ($catalog.ExitCode -ne 0) {
+            throw "Automatic catalog discovery failed.`n$($catalog.Output)"
         }
-        Assert-Match $catalog.Output 'signtype:\s+none' `
-            'A catalog-only file was not reported as unsigned without --catalog.'
+        Assert-Match $catalog.Output 'signtype:\s+cataloged' `
+            'A catalog-only file was not identified automatically.'
+        Assert-Match $catalog.Output 'catafile:\s+.+\.cat' `
+            'Automatic discovery did not report its catalog path.'
+
+        $catalogVerification = Invoke-Arguments @('--verify', $catalogPath)
+        if ($catalogVerification.ExitCode -ne 0) {
+            throw "Automatic catalog verification failed.`n$($catalogVerification.Output)"
+        }
+        Assert-Match $catalogVerification.Output 'verification\.overall:\s+valid' `
+            'The automatically discovered catalog was not verified.'
+
+        $embeddedOnly = Invoke-Arguments @('--embedded-only', $catalogPath)
+        if ($embeddedOnly.ExitCode -ne 1) {
+            throw '--embedded-only did not disable automatic catalog discovery.'
+        }
 
         if ($env:PESIGN_TEST_CATALOG) {
             $explicitCatalog = Invoke-Arguments @('--verify', '--catalog',

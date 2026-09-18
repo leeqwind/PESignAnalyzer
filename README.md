@@ -43,9 +43,12 @@ The original invocation remains supported:
 PESignAnalyzer.exe C:\Windows\System32\notepad.exe
 ```
 
-Catalog discovery is intentionally not automatic because it would require the
-WinTrust catalog-administration APIs. Pass the catalog explicitly with
-`--catalog`. Use `--` before a file name that begins with a hyphen.
+Catalog discovery is automatic without WinTrust: PESignAnalyzer computes the
+file's Authenticode digests and searches the installed catalogs under the
+Windows CatRoot. Use `--catalog` to select a catalog explicitly or
+`--embedded-only` to skip catalog discovery. Use `--` before a file name that
+begins with a hyphen. A cold scan, especially when no catalog matches, can take
+longer than an embedded-signature check because no WinTrust index is used.
 
 Exit code `0` means analysis or verification succeeded, `1` means no readable
 signature was found, `2` indicates an invalid command line, `3` means signature
@@ -54,11 +57,13 @@ revocation status could not be obtained).
 
 ### 命令行参数
 
-原有的直接传入文件路径方式保持兼容。严格模式不会自动发现 Catalog（该过程
-需要 WinTrust 目录管理 API），目录签名必须通过 `--catalog` 显式指定。使用
-`--verify` 启用验证；`--revocation none|cache|online` 设置吊销检查模式并隐含
-启用验证。退出码 `0` 表示成功，`1` 表示未找到签名，`2` 表示参数错误，`3`
-表示验证失败，`4` 表示结果无法确定。
+原有的直接传入文件路径方式保持兼容。程序会计算文件的 Authenticode 摘要并
+扫描 Windows CatRoot，在不使用 WinTrust 的情况下自动发现 Catalog；也可以用
+`--catalog` 显式指定，或用 `--embedded-only` 禁止自动发现。使用 `--verify`
+启用验证；`--revocation none|cache|online` 设置吊销检查模式并隐含启用验证。
+由于不使用 WinTrust 索引，首次扫描或未找到匹配项时可能比嵌入式签名检查更慢。
+退出码 `0` 表示成功，`1` 表示未找到签名，`2` 表示参数错误，`3` 表示验证失败，
+`4` 表示结果无法确定。
 
 ## Running Demo
 
