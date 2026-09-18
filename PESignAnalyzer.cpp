@@ -266,30 +266,6 @@ BOOL GetNestedSignerInfo(
     return bSucceed;
 }
 
-BOOL GetAuthedAttribute(
-    PCMSG_SIGNER_INFO pSignerInfo
-) {
-    BOOL    bSucceed   = FALSE;
-    DWORD   dwObjSize  = 0x00;
-    DWORD   n          = 0x00;
-
-    __try
-    {
-        for (n = 0; n < pSignerInfo->AuthAttrs.cAttr; n++)
-        {
-            if (!lstrcmpA(pSignerInfo->AuthAttrs.rgAttr[n].pszObjId, szOID_RSA_counterSign))
-            {
-                bSucceed = TRUE;
-                break;
-            }
-        }
-    }
-    __finally
-    {
-    }
-    return bSucceed;
-}
-
 // http://support.microsoft.com/kb/323809
 BOOL GetCounterSignerInfo(
     PCMSG_SIGNER_INFO pSignerInfo,
@@ -377,7 +353,7 @@ std::string TimeToString(
         FileTimeToSystemTime(pftIn, &st);
         pstIn = &st;
     }
-    _snprintf_s(szBuffer, 256, "%04d/%02d/%02d %02d:%02d:%02d",
+    _snprintf_s(szBuffer, 256, "%04u/%02u/%02u %02u:%02u:%02u",
         pstIn->wYear,
         pstIn->wMonth,
         pstIn->wDay,
@@ -682,7 +658,7 @@ BOOL GetGeneralizedTimeStamp(
     }
     memcpy_s(szBuffer, sizeof(szBuffer), (CHAR *)&(pbOctetString[dwPositionFound]), dwLengthFound);
     szBuffer[dwLengthFound] = 0;
-    int iFields = _snscanf_s(szBuffer, (int)_countof(szBuffer), "%04d%02d%02d%02d%02d%02d.%03dZ",
+    int iFields = _snscanf_s(szBuffer, (int)_countof(szBuffer), "%04lu%02lu%02lu%02lu%02lu%02lu.%03luZ",
         &wYear,
         &wMonth,
         &wDay,
@@ -693,7 +669,7 @@ BOOL GetGeneralizedTimeStamp(
     );
     if (iFields < 6)
     {
-        iFields = _snscanf_s(szBuffer, (int)_countof(szBuffer), "%04d%02d%02d%02d%02d%02dZ",
+        iFields = _snscanf_s(szBuffer, (int)_countof(szBuffer), "%04lu%02lu%02lu%02lu%02lu%02luZ",
             &wYear,
             &wMonth,
             &wDay,
@@ -749,8 +725,6 @@ BOOL GetStringFromCertContext(
 ) {
     DWORD dwData      = 0x00;
     LPSTR pszTempName = NULL;
-    BOOL  bResult     = FALSE;
-
     dwData = CertGetNameStringA(pCertContext, Type, Flag, NULL, NULL, 0);
     if (!dwData)
     {
@@ -1239,7 +1213,6 @@ BOOL GetSignerCertificateInfo(
     );
     if (!bReturn)
     {
-        INT error = GetLastError();
         if (hSystemStore) CertCloseStore(hSystemStore, 0);
         return FALSE;
     }
@@ -1253,7 +1226,6 @@ BOOL GetSignerCertificateInfo(
     hAuthCryptMsg = NULL;
     if (!bReturn)
     {
-        INT error = GetLastError();
         CertCloseStore(AuthSignData.hCertStoreHandle, 0);
         if (hSystemStore) CertCloseStore(hSystemStore, 0);
         return FALSE;
@@ -1273,7 +1245,6 @@ BOOL GetSignerCertificateInfo(
         SIGN_NODE_INFO      SignNode;
         CERT_INFO           SignerCertInfo = { 0 };
 
-        GetAuthedAttribute(iter->pSignerInfo);
         // Get signature timestamp.
         GetCounterSignerInfo(iter->pSignerInfo, &pCounterSigner);
         if (pCounterSigner)
@@ -1388,7 +1359,7 @@ BOOL MyCryptCATAdminAcquireContext(
         }
         // Windows versions before AcquireContext2 only support the legacy
         // default catalog hash algorithm.
-        if (lstrcmpiW(HashAlgorithm, L"SHA1") != 0)
+        if (lstrcmpW(HashAlgorithm, L"SHA1") != 0)
         {
             return FALSE;
         }
