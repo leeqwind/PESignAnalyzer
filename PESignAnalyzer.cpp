@@ -137,6 +137,7 @@ BOOL GetNestedSignerInfo(
     PBYTE       pbNextData  = NULL;
     DWORD       n           = 0x00;
     DWORD       cbCurrData  = 0x00;
+    DWORD       cbRemaining = 0x00;
 
     if (!AuthSignData || !AuthSignData->pSignerInfo)
     {
@@ -159,79 +160,102 @@ BOOL GetNestedSignerInfo(
             bSucceed = FALSE;
             __leave;
         }
-        pbCurrData = AuthSignData->pSignerInfo->UnauthAttrs.rgAttr[n].rgValue[0].pbData;
-        cbCurrData = AuthSignData->pSignerInfo->UnauthAttrs.rgAttr[n].rgValue[0].cbData;
-        // Multiple nested signatures just add one attr in UnauthAttrs
-        // list of the main signature pointing to the first nested si-
-        // gnature. Every nested signature exists side by side in an 8
-        // bytes aligned way. According to the size of major signature
-        // parse the nested signatures one by one.
-        while (pbCurrData > (BYTE *)AuthSignData->pSignerInfo &&
-            pbCurrData < (BYTE *)AuthSignData->pSignerInfo + AuthSignData->dwObjSize)
+        PCRYPT_ATTRIBUTE pNestedAttr =
+            &AuthSignData->pSignerInfo->UnauthAttrs.rgAttr[n];
+        if (!pNestedAttr->rgValue || pNestedAttr->cValue == 0)
         {
-            SIGNDATA_HANDLE NestedHandle = { 0 };
-            // NOTE: The size in 30 82 xx doesnt contain its own size.
-            // HEAD:
-            // 0000: 30 82 04 df                ; SEQUENCE (4df Bytes)
-            // 0004:    06 09                   ; OBJECT_ID(9 Bytes)
-            // 0006:    |  2a 86 48 86 f7 0d 01 07  02
-            //          |     ; 1.2.840.113549.1.7.2 PKCS 7 SignedData
-            if (memcmp(pbCurrData + 0, SG_ProtoCoded, sizeof(SG_ProtoCoded)) ||
-                memcmp(pbCurrData + 6, SG_SignedData, sizeof(SG_SignedData)))
+            __leave;
+        }
+        for (DWORD valueIndex = 0; valueIndex < pNestedAttr->cValue; valueIndex++)
+        {
+            pbCurrData = pNestedAttr->rgValue[valueIndex].pbData;
+            cbRemaining = pNestedAttr->rgValue[valueIndex].cbData;
+            if (!pbCurrData)
             {
-                break;
+                continue;
             }
+            // Nested signatures can be stored side by side with 8-byte
+            // alignment. Never read beyond the current attribute value.
+            while (cbRemaining > 0)
+            {
+                SIGNDATA_HANDLE NestedHandle = { 0 };
+                const DWORD cbHeader = 6 + sizeof(SG_SignedData);
+                if (cbRemaining < cbHeader ||
+                    memcmp(pbCurrData, SG_ProtoCoded, sizeof(SG_ProtoCoded)) ||
+                    memcmp(pbCurrData + 6, SG_SignedData, sizeof(SG_SignedData)))
+                {
+                    break;
+                }
 
-            if (hNestedMsg) {
-                CryptMsgClose(hNestedMsg);
-                hNestedMsg = NULL;
-            }
-            hNestedMsg = CryptMsgOpenToDecode(X509_ASN_ENCODING | PKCS_7_ASN_ENCODING,
-                0,
-                0,
-                0,
-                NULL,
-                0
-            );
-            if (!hNestedMsg) // Fatal Error
-            {
-                bSucceed = FALSE;
-                __leave;
-            }
+                cbCurrData = ((DWORD)pbCurrData[2] << 8) |
+                    (DWORD)pbCurrData[3];
+                if (cbCurrData > MAXDWORD - 4)
+                {
+                    break;
+                }
+                cbCurrData += 4;
+                if (cbCurrData > cbRemaining)
+                {
+                    break;
+                }
 
-            // Big Endian -> Little Endian
-            cbCurrData = XCH_WORD_LITEND(*(WORD *)(pbCurrData + 2)) + 4;
-            pbNextData = pbCurrData;
-            pbNextData += _8BYTE_ALIGN(cbCurrData, (ULONG_PTR)pbCurrData);
-            bReturn = CryptMsgUpdate(hNestedMsg, pbCurrData, cbCurrData, TRUE);
-            pbCurrData = pbNextData;
-            if (!bReturn)
-            {
-                continue;
+                if (hNestedMsg)
+                {
+                    CryptMsgClose(hNestedMsg);
+                    hNestedMsg = NULL;
+                }
+                hNestedMsg = CryptMsgOpenToDecode(
+                    X509_ASN_ENCODING | PKCS_7_ASN_ENCODING,
+                    0, 0, 0, NULL, 0
+                );
+                if (!hNestedMsg)
+                {
+                    __leave;
+                }
+
+                bReturn = CryptMsgUpdate(hNestedMsg, pbCurrData,
+                    cbCurrData, TRUE);
+                if (bReturn)
+                {
+                    bReturn = MyCryptMsgGetParam(hNestedMsg,
+                        CMSG_SIGNER_INFO_PARAM,
+                        0,
+                        (PVOID *)&NestedHandle.pSignerInfo,
+                        &NestedHandle.dwObjSize
+                    );
+                }
+                if (bReturn && NestedHandle.pSignerInfo)
+                {
+                    NestedHandle.hCertStoreHandle = CertOpenStore(
+                        CERT_STORE_PROV_MSG,
+                        PKCS_7_ASN_ENCODING | X509_ASN_ENCODING,
+                        0, 0, hNestedMsg
+                    );
+                    if (NestedHandle.hCertStoreHandle)
+                    {
+                        bSucceed = TRUE;
+                        NestedChain.push_back(NestedHandle);
+                    }
+                    else
+                    {
+                        LocalFree(NestedHandle.pSignerInfo);
+                    }
+                }
+
+                if (cbRemaining == cbCurrData)
+                {
+                    break;
+                }
+                ULONG_PTR cbAdvance = _8BYTE_ALIGN(cbCurrData,
+                    (ULONG_PTR)pbCurrData);
+                if (cbAdvance < cbCurrData || cbAdvance > cbRemaining)
+                {
+                    break;
+                }
+                pbNextData = pbCurrData + cbAdvance;
+                cbRemaining -= (DWORD)cbAdvance;
+                pbCurrData = pbNextData;
             }
-            bReturn = MyCryptMsgGetParam(hNestedMsg, CMSG_SIGNER_INFO_PARAM,
-                0,
-                (PVOID *)&NestedHandle.pSignerInfo,
-                &NestedHandle.dwObjSize
-            );
-            if (!bReturn || !NestedHandle.pSignerInfo)
-            {
-                continue;
-            }
-            NestedHandle.hCertStoreHandle = CertOpenStore(CERT_STORE_PROV_MSG,
-                PKCS_7_ASN_ENCODING | X509_ASN_ENCODING,
-                0,
-                0,
-                hNestedMsg
-            );
-            if (!NestedHandle.hCertStoreHandle)
-            {
-                LocalFree(NestedHandle.pSignerInfo);
-                NestedHandle.pSignerInfo = NULL;
-                continue;
-            }
-            bSucceed = TRUE;
-            NestedChain.push_back(NestedHandle);
         }
     }
     __finally
