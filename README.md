@@ -1,27 +1,62 @@
 # PESignAnalyzer
 
-A Simple PE File Signature information Extracting Tool.
+[简体中文](README.zh.md)
 
-This program is used to get signature information from PE files which signed by a/some embedded code signature certificate(s) on Windows. Supporting multi-signed file info and certificates chain. Runned on Windows Vista, Windows 7, or later OS platform.
+PESignAnalyzer is a Windows command-line tool for inspecting and verifying
+Authenticode signatures on PE files. It supports embedded signatures and
+catalog-signed files, including automatic discovery of installed system
+catalogs.
 
-This code uses `CryptoAPIs` to parse the signature and certificate data from specified file, supporting many file types, such as .exe, .cat(catalog file), .dll, .sys, etc.
+The verification path does **not** import or call any API from `Wintrust.dll`.
+PE hashing, catalog membership lookup, CMS verification, timestamp validation,
+certificate-chain building, and optional revocation checks are implemented with
+PE parsing plus APIs from Kernel32, Crypt32, and Advapi32.
 
-PESignAnalyzer can also verify Authenticode content digests, CMS signatures,
-RFC 3161 and legacy timestamps, certificate chains, and optional revocation
-status. It performs these checks with CryptoAPI and does not import or call any
-API from `Wintrust.dll`.
+## Current status
 
-一个简单的PE文件签名信息提取工具。
+Current version: **1.3.0**
 
-这个程序用来从由1个或多个嵌入式代码签名证书所签名的PE文件中获取签名信息。支持多签名文件信息和证书链的提取。运行在Windows Vista，Windows 7，及更新的操作系统平台。
+| Capability | Status |
+|---|---|
+| Embedded Authenticode metadata | Supported |
+| Multiple/nested signature metadata | Supported |
+| Automatic system Catalog discovery | Supported without WinTrust |
+| Explicit Catalog selection | Supported with `--catalog` |
+| Authenticode content digest verification | Supported |
+| CMS/PKCS#7 signature verification | Supported |
+| RFC 3161 timestamps | Supported |
+| Legacy PKCS#9 countersignatures | Supported |
+| Certificate-chain policy verification | Supported |
+| Cached or online revocation checks | Supported |
+| x86 and x64 release binaries | Included in `Build/` |
 
-这份代码使用`CryptoAPIs`来解析指定文件中的签名和证书数据，支持多种文件类型，包括exe，cat（catalog文件），dll，sys等格式。
+The release binaries have been checked to import only `kernel32.dll`,
+`crypt32.dll`, and `advapi32.dll`.
 
-PESignAnalyzer 还可以验证 Authenticode 内容摘要、CMS 签名、RFC 3161 及旧式
-时间戳、证书链与可选的吊销状态。整个验证过程仅使用 CryptoAPI，不导入、也不
-调用 `Wintrust.dll` 中的任何 API。
+## How verification works
 
-## Command Line
+PESignAnalyzer performs the following checks without `WinVerifyTrust` or
+`CryptCATAdmin*`:
+
+1. Parse the PE headers and calculate the Authenticode image digest while
+   excluding the checksum, security-directory entry, and certificate table.
+2. For embedded signatures, extract the signed digest from the PKCS#7 content
+   and compare it with the calculated image digest.
+3. For catalog signatures, calculate candidate digests, scan the Windows
+   CatRoot, parse Catalog DER members, and locate a matching member digest.
+4. Verify the CMS signer with `CryptMsgControl` and
+   `CMSG_CTRL_VERIFY_SIGNATURE_EX`.
+5. Verify RFC 3161 or legacy countersignature timestamps.
+6. Build the signer and timestamp certificate chains and apply Authenticode
+   chain policies.
+7. Optionally check revocation using the local cache or online CRL/OCSP access.
+
+Catalog discovery uses a lightweight DER member prefilter, then confirms the
+digest in the candidate's CMS content. With `--verify`, the candidate's CMS
+signature and certificate chain are also verified. A cold scan, especially
+when no catalog matches, is slower than the Windows WinTrust catalog index.
+
+## Command line
 
 ```text
 Usage: PESignAnalyzer.exe [options] <file>
@@ -32,371 +67,129 @@ Options:
       --verify          Verify the Authenticode signature.
       --revocation <mode>
                         Revocation mode: none, cache, or online.
-  -h, --help, /?        Show help and exit.
+  -h, --help, /?        Show this help and exit.
   -V, --version         Show version information and exit.
       --                 Stop processing options.
 ```
 
-The original invocation remains supported:
+The original metadata-only invocation remains supported:
 
-```cmd
-PESignAnalyzer.exe C:\Windows\System32\notepad.exe
+```powershell
+.\PESignAnalyzer_VS2015_x64.exe "C:\Program Files\Git\cmd\git.exe"
 ```
 
-Catalog discovery is automatic without WinTrust: PESignAnalyzer computes the
-file's Authenticode digests and searches the installed catalogs under the
-Windows CatRoot. Use `--catalog` to select a catalog explicitly or
-`--embedded-only` to skip catalog discovery. Use `--` before a file name that
-begins with a hyphen. A cold scan, especially when no catalog matches, can take
-longer than an embedded-signature check because no WinTrust index is used.
+Verify an embedded signature:
 
-Exit code `0` means analysis or verification succeeded, `1` means no readable
-signature was found, `2` indicates an invalid command line, `3` means signature
-verification failed, and `4` means the result is indeterminate (for example,
-revocation status could not be obtained).
-
-### 命令行参数
-
-原有的直接传入文件路径方式保持兼容。程序会计算文件的 Authenticode 摘要并
-扫描 Windows CatRoot，在不使用 WinTrust 的情况下自动发现 Catalog；也可以用
-`--catalog` 显式指定，或用 `--embedded-only` 禁止自动发现。使用 `--verify`
-启用验证；`--revocation none|cache|online` 设置吊销检查模式并隐含启用验证。
-由于不使用 WinTrust 索引，首次扫描或未找到匹配项时可能比嵌入式签名检查更慢。
-退出码 `0` 表示成功，`1` 表示未找到签名，`2` 表示参数错误，`3` 表示验证失败，
-`4` 表示结果无法确定。
-
-## Running Demo
-
-运行演示
-
-```
-D:\GitHub\PESignAnalyzer\Debug>PESignAnalyzer_vs2013.exe C:\Windows\notepad.exe
-filepath: C:\Windows\notepad.exe
-signtype: cataloged
-catafile: C:\WINDOWS\system32\CatRoot\{F750E6C3-38EE-11D1-85E5-00C04FC295EE}\Microsoft-Windows-Client-Features-Package-AutoMerged-shell~31bf3856ad364e35~amd64~~10.0.14393.0.cat
------------------------
-[ The 1 Sign Info ]
-timestamp:       2016/07/16 17:45:27
-version:         V2
-digestAlgorithm: SHA256
- |---------------------
- |- subject:       Microsoft Windows
- |- issuer:        Microsoft Windows Production PCA 2011
- |- serial:        33000000bce120fdd27cc8ee930000000000bc
- |- thumbprint:    e85459b23c232db3cb94c7a56d47678f58e8e51e
- |- signAlgorithm: sha256RSA(RSA)
- |- version:       V3
- |- notbefore:     2015/08/18 17:15:28
- |- notafter:      2016/11/18 17:15:28
- |- CRLpoint:      http://www.microsoft.com/pkiops/crl/MicWinProPCA2011_2011-10-19.crl
- |---------------------
- |- subject:       Microsoft Windows Production PCA 2011
- |- issuer:        Microsoft Root Certificate Authority 2010
- |- serial:        61077656000000000008
- |- thumbprint:    580a6f4cc4e4b669b9ebdc1b2b3e087b80d0678d
- |- signAlgorithm: sha256RSA(RSA)
- |- version:       V3
- |- notbefore:     2011/10/19 18:41:42
- |- notafter:      2026/10/19 18:51:42
- |- CRLpoint:      http://crl.microsoft.com/pki/crl/products/MicRooCerAut_2010-06-23.crl
- |---------------------
- |- subject:       Microsoft Root Certificate Authority 2010
- |- issuer:        Microsoft Root Certificate Authority 2010
- |- serial:        28cc3a25bfba44ac449a9b586b4339aa
- |- thumbprint:    3b1efd3a66ea28b16697394703a72ca340a05bd5
- |- signAlgorithm: sha256RSA(RSA)
- |- version:       V3
- |- notbefore:     2010/06/23 21:57:24
- |- notafter:      2035/06/23 22:04:01
- |- CRLpoint:
------------------------
-
+```powershell
+.\PESignAnalyzer_VS2015_x64.exe --verify `
+  "C:\Program Files\Git\cmd\git.exe"
 ```
 
-## Compiling
+Automatically discover and verify the Catalog for a system file:
 
-### Method 1: Visual Studio / MSBuild (Recommended)
+```powershell
+.\PESignAnalyzer_VS2015_x64.exe --verify `
+  "C:\Windows\System32\notepad.exe"
+```
 
-Open the project file with Microsoft Visual Studio 2008 or later (VS2013, VS2015, VS2017, VS2019, VS2022 all supported). The repository ships two ready-to-use project files under the `MSVC/` folder:
+Specify a Catalog explicitly:
+
+```powershell
+.\PESignAnalyzer_VS2015_x64.exe --verify `
+  --catalog "C:\Windows\System32\CatRoot\{GUID}\package.cat" `
+  "C:\Windows\System32\notepad.exe"
+```
+
+Enable online revocation checks (`--revocation` implies `--verify`):
+
+```powershell
+.\PESignAnalyzer_VS2015_x64.exe --revocation online `
+  "C:\Windows\System32\notepad.exe"
+```
+
+In PowerShell, a continuation backtick must be the final character on its line.
+
+## Verification output
+
+| Field | Meaning |
+|---|---|
+| `contentDigest` | The PE digest matches the embedded signature or Catalog member |
+| `cmsSignature` | The CMS/PKCS#7 cryptographic signature is valid |
+| `certificateChain` | The signer chain satisfies the selected Authenticode policy |
+| `timestamp` | The RFC 3161 or legacy timestamp is valid |
+| `revocation` | `not_checked`, `good`, `revoked`, or `unknown` |
+| `overall` | `valid`, `invalid`, or `indeterminate` |
+
+`indeterminate` means the cryptographic signature and chain can be valid while
+the requested revocation status cannot be established. It must not be treated
+as equivalent to `valid` in a strict security policy.
+
+## Exit codes
+
+| Code | Meaning |
+|---:|---|
+| `0` | Analysis or verification succeeded |
+| `1` | No readable signature was found |
+| `2` | Invalid command line |
+| `3` | Signature verification failed |
+| `4` | Verification is indeterminate |
+
+## Building
+
+The repository contains Visual C++ project files under `MSVC/`:
 
 - `MSVC/PESignAnalyzer_VS2013.vcxproj`
 - `MSVC/PESignAnalyzer_VS2015.vcxproj`
 
-From the command line you can also build directly with MSBuild:
+Example MSBuild commands:
 
 ```cmd
-:: x64 Release
 MSBuild MSVC\PESignAnalyzer_VS2015.vcxproj /p:Configuration=Release /p:Platform=x64
-
-:: x86 Debug
-MSBuild MSVC\PESignAnalyzer_VS2015.vcxproj /p:Configuration=Debug   /p:Platform=Win32
+MSBuild MSVC\PESignAnalyzer_VS2015.vcxproj /p:Configuration=Release /p:Platform=Win32
 ```
 
-The output binary will be placed under the `Debug\` or `Release\` folder next to the solution.
-
-### Method 2: Directly invoke cl.exe (Visual Studio Build Tools)
-
-If you only have the Visual Studio Build Tools installed (no IDE), you can compile the single source file from the Developer Command Prompt:
+The single source file can also be compiled from a Visual Studio Developer
+Command Prompt:
 
 ```cmd
-:: (1) Set up the build environment (choose the vcvars matching your tools version)
-call "C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
-
-:: (2) Compile. Crypt32.lib / Advapi32.lib are also auto-imported
-::     via #pragma comment(lib, ...) inside the source, so listing them on the
-::     command line is optional but kept for explicitness.
-cl.exe /EHsc /nologo /W3 /DUNICODE /D_UNICODE PESignAnalyzer.cpp ^
-       Crypt32.lib Advapi32.lib /Fe:PESignAnalyzer.exe
+cl.exe /EHsc /nologo /W3 /O2 /MT /DUNICODE /D_UNICODE ^
+  PESignAnalyzer.cpp Crypt32.lib Advapi32.lib /Fe:PESignAnalyzer.exe
 ```
 
-Compiler flags explained:
+`Crypt32.lib` and `Advapi32.lib` are also selected by `#pragma comment` in the
+source. `Wintrust.lib` is neither required nor linked.
 
-| Flag | Purpose |
-|------|---------|
-| `/EHsc` | Enables standard C++ exception handling (required by `std::string`, `std::list`) |
-| `/W3`  | Warning level 3 (matches the project default in `.vcxproj`) |
-| `/DUNICODE /D_UNICODE` | Selects the Unicode character set, since the entry point is `wmain` |
-| `/Fe:<name>` | Names the output executable |
+## Tests
 
-Required import libraries:
+Run the smoke suite against either architecture:
 
-| Library | APIs it provides |
-|---------|------------------|
-| `Crypt32.lib`  | `Cert*`, `CryptMsg*`, `CryptDecodeObject*` (CryptoAPI / certificate store) |
-| `Advapi32.lib` | Legacy CryptoAPI: `CryptAcquireContext`, `CryptCreateHash`, `CryptHashData`, `CryptGetHashParam` ... |
-
-After a successful build, run it against any system binary to confirm:
-
-```cmd
-PESignAnalyzer.exe C:\Windows\System32\notepad.exe
+```powershell
+.\tests\smoke.ps1 -Executable .\Build\PESignAnalyzer_VS2015_x64.exe
+.\tests\smoke.ps1 -Executable .\Build\PESignAnalyzer_VS2015_x86.exe
 ```
 
----
+The suite covers command-line behavior, embedded verification, tamper
+detection, automatic Catalog discovery, Catalog verification, and
+`--embedded-only` behavior.
 
-### 编译
+## Limitations
 
-开发者可以通过 Microsoft Visual Studio 2008 或更新版本的 Visual Studio 来编译这个程序。仓库在 `MSVC/` 目录下提供了两份现成的工程文件：
+- Catalog auto-discovery scans the local Windows CatRoot because the WinTrust
+  index is intentionally not used. Cold or unsuccessful scans can be slower.
+- Automatic discovery only considers locally installed system catalogs. Use
+  `--catalog` for another Catalog file.
+- Revocation checks depend on the local cache, network configuration, and CA
+  CRL/OCSP availability; an unavailable status produces `indeterminate`.
+- Metadata extraction supports multiple/nested signatures. The current
+  verification summary evaluates the primary signer selected from the message.
+- This project is a diagnostic tool. Validate its behavior against the security
+  requirements and samples of your deployment before using it as an enforcement
+  boundary.
 
-- `MSVC/PESignAnalyzer_VS2013.vcxproj`
-- `MSVC/PESignAnalyzer_VS2015.vcxproj`
+## License
 
-### 方式一：Visual Studio / MSBuild（推荐）
-
-直接双击 `.vcxproj` 用 IDE 打开，或在命令行中使用 MSBuild 编译：
-
-```cmd
-:: x64 Release
-MSBuild MSVC\PESignAnalyzer_VS2015.vcxproj /p:Configuration=Release /p:Platform=x64
-
-:: x86 Debug
-MSBuild MSVC\PESignAnalyzer_VS2015.vcxproj /p:Configuration=Debug   /p:Platform=Win32
-```
-
-编译产物默认会生成在解决方案目录下的 `Debug\` 或 `Release\` 文件夹中。
-
-### 方式二：直接调用 cl.exe（Visual Studio Build Tools）
-
-如果只安装了 Visual Studio Build Tools（未装 IDE），可以在「开发人员命令提示符」中通过单文件命令直接编译：
-
-```cmd
-:: (1) 配置编译环境（按实际工具链版本选择 vcvars 路径）
-call "C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
-
-:: (2) 编译。Crypt32.lib / Advapi32.lib 已通过源码顶部的
-::     #pragma comment(lib, ...) 自动引入，命令行中显式列出是为了便于理解。
-cl.exe /EHsc /nologo /W3 /DUNICODE /D_UNICODE PESignAnalyzer.cpp ^
-       Crypt32.lib Advapi32.lib /Fe:PESignAnalyzer.exe
-```
-
-编译参数说明：
-
-| 参数 | 作用 |
-|------|------|
-| `/EHsc` | 启用标准 C++ 异常处理（代码中使用了 `std::string`、`std::list`） |
-| `/W3`  | 警告级别 3（与 `.vcxproj` 工程默认配置一致） |
-| `/DUNICODE /D_UNICODE` | 选择 Unicode 字符集，入口函数为 `wmain` |
-| `/Fe:<名字>` | 指定输出可执行文件的文件名 |
-
-所需链接库：
-
-| 库 | 提供的 API |
-|----|-----------|
-| `Crypt32.lib`  | `Cert*`、`CryptMsg*`、`CryptDecodeObject*`（证书、消息、解码） |
-| `Advapi32.lib` | Legacy CryptoAPI：`CryptAcquireContext`、`CryptCreateHash`、`CryptHashData`、`CryptGetHashParam` 等 |
-
-编译成功后可以用任意系统文件验证输出：
-
-```cmd
-PESignAnalyzer.exe C:\Windows\System32\notepad.exe
-```
-
-## Multi-signed Supporting
-
-多签名支持
-
-This code does not use any `Wintrust.dll` API. Signature parsing and verification
-are implemented with CryptoAPI, including explicit catalog membership checks.
-
-It might also be noted that this program supports analyzing multi-signed PE files, even though on the OS platforms which does not support multi-signature detecting, such as Windows 7, Windows Vista, etc. Multi-signed PE file means that this file has been signed by more than one embedded code signature certificate.
-
-If you transfer the path to a multi-signatured file into PESignAnalyzer process, it will show the target information as below. Every `[The X Sign Info]` means a chunk of completed information of a signature block.
-
-这份代码不使用任何 `Wintrust.dll` API；签名解析、验证及显式 Catalog 成员校验
-均通过 CryptoAPI 实现。
-
-需要注意的是，这个程序支持解析多签名的PE文件，即使是在诸如Windows 7，Windows Vista这种不支持多签名检测的操作系统平台上。多签名的PE文件意味着这个文件已经被多个嵌入式代码签名证书所签名了。
-
-如果你将一个多签名文件的路径作为参数传递给PESignAnalyzer的二进制文件，它会展示如下所示的信息。 每一个`[The X Sign Info]`意味着一个签名的完整信息。
-
-```
-D:\GitHub\PESignAnalyzer\Debug>PESignAnalyzer_vs2013.exe D:\sign_samples\multi_sign\sample.sys
-filepath: D:\sign_samples\multi_sign\sample.sys
-signtype: embedded
-catafile:
------------------------
-[ The 1 Sign Info ]
-timestamp:       2015/07/10 22:19:44
-version:         V2
-digestAlgorithm: SHA1
- |---------------------
- |- subject:       Future Technology Devices International Ltd
- |- issuer:        VeriSign Class 3 Code Signing 2010 CA
- |- serial:        03c3ce928ee0415b782a96d3fb5dc283
- |- thumbprint:    055ef6258c59fe21f14d9fa938da92f345e7eb9d
- |- signAlgorithm: sha1RSA(RSA)
- |- version:       V3
- |- notbefore:     2013/09/18 00:00:00
- |- notafter:      2016/11/16 23:59:59
- |- CRLpoint:      http://csc3-2010-crl.verisign.com/CSC3-2010.crl
- |---------------------
- |- subject:       VeriSign Class 3 Code Signing 2010 CA
- |- issuer:        VeriSign Class 3 Public Primary Certification Authority - G5
- |- serial:        5200e5aa2556fc1a86ed96c9d44b33c7
- |- thumbprint:    495847a93187cfb8c71f840cb7b41497ad95c64f
- |- signAlgorithm: sha1RSA(RSA)
- |- version:       V3
- |- notbefore:     2010/02/08 00:00:00
- |- notafter:      2020/02/07 23:59:59
- |- CRLpoint:      http://crl.verisign.com/pca3-g5.crl
- |---------------------
- |- subject:       VeriSign Class 3 Public Primary Certification Authority - G5
- |- issuer:        VeriSign Class 3 Public Primary Certification Authority - G5
- |- serial:        18dad19e267de8bb4a2158cdcc6b3b4a
- |- thumbprint:    4eb6d578499b1ccf5f581ead56be3d9b6744a5e5
- |- signAlgorithm: sha1RSA(RSA)
- |- version:       V3
- |- notbefore:     2006/11/08 00:00:00
- |- notafter:      2036/07/16 23:59:59
- |- CRLpoint:
------------------------
-[ The 2 Sign Info ]
-timestamp:       2015/07/14 20:13:00
-version:         V2
-digestAlgorithm: SHA256
- |---------------------
- |- subject:       Microsoft Windows Hardware Compatibility Publisher
- |- issuer:        Microsoft Windows Third Party Component CA 2012
- |- serial:        330000001dc31a761624754f8000000000001d
- |- thumbprint:    96c51247e27dae45a1bcd582a0503256f9eaedac
- |- signAlgorithm: sha256RSA(RSA)
- |- version:       V3
- |- notbefore:     2014/12/19 19:27:34
- |- notafter:      2016/03/19 19:27:34
- |- CRLpoint:      http://www.microsoft.com/pkiops/crl/Microsoft%20Windows%20Third%20Party%20Component%20CA%202012.crl
- |---------------------
- |- subject:       Microsoft Windows Third Party Component CA 2012
- |- issuer:        Microsoft Root Certificate Authority 2010
- |- serial:        610baac1000000000009
- |- thumbprint:    77a10ebf07542725218cd83a01b521c57bc67f73
- |- signAlgorithm: sha256RSA(RSA)
- |- version:       V3
- |- notbefore:     2012/04/18 23:48:38
- |- notafter:      2027/04/18 23:58:38
- |- CRLpoint:      http://crl.microsoft.com/pki/crl/products/MicRooCerAut_2010-06-23.crl
- |---------------------
- |- subject:       Microsoft Root Certificate Authority 2010
- |- issuer:        Microsoft Root Certificate Authority 2010
- |- serial:        28cc3a25bfba44ac449a9b586b4339aa
- |- thumbprint:    3b1efd3a66ea28b16697394703a72ca340a05bd5
- |- signAlgorithm: sha256RSA(RSA)
- |- version:       V3
- |- notbefore:     2010/06/23 21:57:24
- |- notafter:      2035/06/23 22:04:01
- |- CRLpoint:
------------------------
-[ The 3 Sign Info ]
-timestamp:       2015/07/24 06:16:44
-version:         V2
-digestAlgorithm: SHA256
- |---------------------
- |- subject:       Microsoft Windows Hardware Compatibility Publisher
- |- issuer:        Microsoft Windows Third Party Component CA 2012
- |- serial:        330000001dc31a761624754f8000000000001d
- |- thumbprint:    96c51247e27dae45a1bcd582a0503256f9eaedac
- |- signAlgorithm: sha256RSA(RSA)
- |- version:       V3
- |- notbefore:     2014/12/19 19:27:34
- |- notafter:      2016/03/19 19:27:34
- |- CRLpoint:      http://www.microsoft.com/pkiops/crl/Microsoft%20Windows%20Third%20Party%20Component%20CA%202012.crl
- |---------------------
- |- subject:       Microsoft Windows Third Party Component CA 2012
- |- issuer:        Microsoft Root Certificate Authority 2010
- |- serial:        610baac1000000000009
- |- thumbprint:    77a10ebf07542725218cd83a01b521c57bc67f73
- |- signAlgorithm: sha256RSA(RSA)
- |- version:       V3
- |- notbefore:     2012/04/18 23:48:38
- |- notafter:      2027/04/18 23:58:38
- |- CRLpoint:      http://crl.microsoft.com/pki/crl/products/MicRooCerAut_2010-06-23.crl
- |---------------------
- |- subject:       Microsoft Root Certificate Authority 2010
- |- issuer:        Microsoft Root Certificate Authority 2010
- |- serial:        28cc3a25bfba44ac449a9b586b4339aa
- |- thumbprint:    3b1efd3a66ea28b16697394703a72ca340a05bd5
- |- signAlgorithm: sha256RSA(RSA)
- |- version:       V3
- |- notbefore:     2010/06/23 21:57:24
- |- notafter:      2035/06/23 22:04:01
- |- CRLpoint:
------------------------
-[ The 4 Sign Info ]
-timestamp:       2015/09/21 22:47:46
-version:         V2
-digestAlgorithm: SHA256
- |---------------------
- |- subject:       Microsoft Windows Hardware Compatibility Publisher
- |- issuer:        Microsoft Windows Third Party Component CA 2012
- |- serial:        330000001dc31a761624754f8000000000001d
- |- thumbprint:    96c51247e27dae45a1bcd582a0503256f9eaedac
- |- signAlgorithm: sha256RSA(RSA)
- |- version:       V3
- |- notbefore:     2014/12/19 19:27:34
- |- notafter:      2016/03/19 19:27:34
- |- CRLpoint:      http://www.microsoft.com/pkiops/crl/Microsoft%20Windows%20Third%20Party%20Component%20CA%202012.crl
- |---------------------
- |- subject:       Microsoft Windows Third Party Component CA 2012
- |- issuer:        Microsoft Root Certificate Authority 2010
- |- serial:        610baac1000000000009
- |- thumbprint:    77a10ebf07542725218cd83a01b521c57bc67f73
- |- signAlgorithm: sha256RSA(RSA)
- |- version:       V3
- |- notbefore:     2012/04/18 23:48:38
- |- notafter:      2027/04/18 23:58:38
- |- CRLpoint:      http://crl.microsoft.com/pki/crl/products/MicRooCerAut_2010-06-23.crl
- |---------------------
- |- subject:       Microsoft Root Certificate Authority 2010
- |- issuer:        Microsoft Root Certificate Authority 2010
- |- serial:        28cc3a25bfba44ac449a9b586b4339aa
- |- thumbprint:    3b1efd3a66ea28b16697394703a72ca340a05bd5
- |- signAlgorithm: sha256RSA(RSA)
- |- version:       V3
- |- notbefore:     2010/06/23 21:57:24
- |- notafter:      2035/06/23 22:04:01
- |- CRLpoint:
------------------------
-
-```
+[MIT](LICENSE)
 
 ## Contact
 
-If you have any questions or problems, you can contact with me: leeq.live@outlook.com 
+leeq.live@outlook.com
