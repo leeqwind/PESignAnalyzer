@@ -28,7 +28,7 @@ Current version: **1.3.0**
 | Legacy PKCS#9 countersignatures | Supported |
 | Certificate-chain policy verification | Supported |
 | Cached or online revocation checks | Supported |
-| x86 and x64 release binaries | Included in `Build/` |
+| x86 and x64 release binaries | Included in `dist/` |
 
 The release binaries have been checked to import only `kernel32.dll`,
 `crypt32.dll`, and `advapi32.dll`.
@@ -69,33 +69,33 @@ Options:
                         Revocation mode: none, cache, or online.
   -h, --help, /?        Show this help and exit.
   -V, --version         Show version information and exit.
-      --                 Stop processing options.
+      --                Stop processing options.
 ```
 
 The original metadata-only invocation remains supported:
 
 ```powershell
-.\PESignAnalyzer_VS2015_x64.exe "C:\Program Files\Git\cmd\git.exe"
+.\dist\bin_x64.exe "C:\Program Files\Git\cmd\git.exe"
 ```
 
 Verify an embedded signature:
 
 ```powershell
-.\PESignAnalyzer_VS2015_x64.exe --verify `
+.\dist\bin_x64.exe --verify `
   "C:\Program Files\Git\cmd\git.exe"
 ```
 
 Automatically discover and verify the Catalog for a system file:
 
 ```powershell
-.\PESignAnalyzer_VS2015_x64.exe --verify `
+.\dist\bin_x64.exe --verify `
   "C:\Windows\System32\notepad.exe"
 ```
 
 Specify a Catalog explicitly:
 
 ```powershell
-.\PESignAnalyzer_VS2015_x64.exe --verify `
+.\dist\bin_x64.exe --verify `
   --catalog "C:\Windows\System32\CatRoot\{GUID}\package.cat" `
   "C:\Windows\System32\notepad.exe"
 ```
@@ -103,7 +103,7 @@ Specify a Catalog explicitly:
 Enable online revocation checks (`--revocation` implies `--verify`):
 
 ```powershell
-.\PESignAnalyzer_VS2015_x64.exe --revocation online `
+.\dist\bin_x64.exe --revocation online `
   "C:\Windows\System32\notepad.exe"
 ```
 
@@ -136,36 +136,46 @@ as equivalent to `valid` in a strict security policy.
 
 ## Building
 
-The repository contains Visual C++ project files under `MSVC/`:
+The preferred build entry point is CMake. The following commands reproduce the
+two release binaries shipped in `dist/` from a Visual Studio Developer Command
+Prompt:
 
-- `MSVC/PESignAnalyzer_VS2013.vcxproj`
-- `MSVC/PESignAnalyzer_VS2015.vcxproj`
+```cmd
+cmake -S . -B .build\cmake-x64 -A x64
+cmake --build .build\cmake-x64 --config Release --parallel
+copy /Y .build\cmake-x64\Release\PESignAnalyzer.exe dist\bin_x64.exe
+
+cmake -S . -B .build\cmake-x86 -A Win32
+cmake --build .build\cmake-x86 --config Release --parallel
+copy /Y .build\cmake-x86\Release\PESignAnalyzer.exe dist\bin_x86.exe
+```
+
+Legacy Visual C++ project files remain available under `msvc/`:
+
+- `msvc/vs2013.vcxproj`
+- `msvc/vs2015.vcxproj`
 
 Example MSBuild commands:
 
 ```cmd
-MSBuild MSVC\PESignAnalyzer_VS2015.vcxproj /p:Configuration=Release /p:Platform=x64
-MSBuild MSVC\PESignAnalyzer_VS2015.vcxproj /p:Configuration=Release /p:Platform=Win32
+MSBuild msvc\vs2015.vcxproj /p:Configuration=Release /p:Platform=x64
+MSBuild msvc\vs2015.vcxproj /p:Configuration=Release /p:Platform=Win32
 ```
 
-The single source file can also be compiled from a Visual Studio Developer
-Command Prompt:
+The implementation is organized under `src/`, with its public API under
+`include/pesignanalyzer/`. See [docs/architecture.md](docs/architecture.md)
+for the module map and ownership boundaries.
 
-```cmd
-cl.exe /EHsc /nologo /W3 /O2 /MT /DUNICODE /D_UNICODE ^
-  PESignAnalyzer.cpp Crypt32.lib Advapi32.lib /Fe:PESignAnalyzer.exe
-```
-
-`Crypt32.lib` and `Advapi32.lib` are also selected by `#pragma comment` in the
-source. `Wintrust.lib` is neither required nor linked.
+Both build systems link `Crypt32.lib` and `Advapi32.lib`. `Wintrust.lib` is
+neither required nor linked.
 
 ## Tests
 
-Run the smoke suite against either architecture:
+Run the smoke suite against either packaged architecture:
 
 ```powershell
-.\tests\smoke.ps1 -Executable .\Build\PESignAnalyzer_VS2015_x64.exe
-.\tests\smoke.ps1 -Executable .\Build\PESignAnalyzer_VS2015_x86.exe
+.\tests\smoke.ps1 -Executable .\dist\bin_x64.exe
+.\tests\smoke.ps1 -Executable .\dist\bin_x86.exe
 ```
 
 The suite covers command-line behavior, embedded verification, tamper

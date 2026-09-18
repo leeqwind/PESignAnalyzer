@@ -26,7 +26,7 @@ PESignAnalyzer 是一个用于分析和验证 Windows PE 文件 Authenticode 签
 | 旧式 PKCS#9 countersignature | 已支持 |
 | 证书链策略验证 | 已支持 |
 | 缓存或在线吊销检查 | 已支持 |
-| x86、x64 发布二进制 | 已包含在 `Build/` 中 |
+| x86、x64 发布二进制 | 已包含在 `dist/` 中 |
 
 发布二进制已经检查，导入表中只有 `kernel32.dll`、`crypt32.dll` 和
 `advapi32.dll`。
@@ -62,33 +62,33 @@ Options:
                         Revocation mode: none, cache, or online.
   -h, --help, /?        Show this help and exit.
   -V, --version         Show version information and exit.
-      --                 Stop processing options.
+      --                Stop processing options.
 ```
 
 原有的仅分析元数据调用方式保持兼容：
 
 ```powershell
-.\PESignAnalyzer_VS2015_x64.exe "C:\Program Files\Git\cmd\git.exe"
+.\dist\bin_x64.exe "C:\Program Files\Git\cmd\git.exe"
 ```
 
 验证嵌入式签名：
 
 ```powershell
-.\PESignAnalyzer_VS2015_x64.exe --verify `
+.\dist\bin_x64.exe --verify `
   "C:\Program Files\Git\cmd\git.exe"
 ```
 
 自动查找并验证系统文件对应的 Catalog：
 
 ```powershell
-.\PESignAnalyzer_VS2015_x64.exe --verify `
+.\dist\bin_x64.exe --verify `
   "C:\Windows\System32\notepad.exe"
 ```
 
 显式指定 Catalog：
 
 ```powershell
-.\PESignAnalyzer_VS2015_x64.exe --verify `
+.\dist\bin_x64.exe --verify `
   --catalog "C:\Windows\System32\CatRoot\{GUID}\package.cat" `
   "C:\Windows\System32\notepad.exe"
 ```
@@ -96,7 +96,7 @@ Options:
 启用在线吊销检查（`--revocation` 隐含启用 `--verify`）：
 
 ```powershell
-.\PESignAnalyzer_VS2015_x64.exe --revocation online `
+.\dist\bin_x64.exe --revocation online `
   "C:\Windows\System32\notepad.exe"
 ```
 
@@ -128,35 +128,42 @@ Options:
 
 ## 编译
 
-仓库在 `MSVC/` 目录提供 Visual C++ 工程文件：
+推荐使用 CMake 作为统一构建入口。以下命令可在 Visual Studio 开发人员命令
+提示符中重新生成 `dist/` 内发布的两个可执行文件：
 
-- `MSVC/PESignAnalyzer_VS2013.vcxproj`
-- `MSVC/PESignAnalyzer_VS2015.vcxproj`
+```cmd
+cmake -S . -B .build\cmake-x64 -A x64
+cmake --build .build\cmake-x64 --config Release --parallel
+copy /Y .build\cmake-x64\Release\PESignAnalyzer.exe dist\bin_x64.exe
+
+cmake -S . -B .build\cmake-x86 -A Win32
+cmake --build .build\cmake-x86 --config Release --parallel
+copy /Y .build\cmake-x86\Release\PESignAnalyzer.exe dist\bin_x86.exe
+```
+
+仓库仍在 `msvc/` 目录保留旧版 Visual C++ 工程文件：
+
+- `msvc/vs2013.vcxproj`
+- `msvc/vs2015.vcxproj`
 
 MSBuild 示例：
 
 ```cmd
-MSBuild MSVC\PESignAnalyzer_VS2015.vcxproj /p:Configuration=Release /p:Platform=x64
-MSBuild MSVC\PESignAnalyzer_VS2015.vcxproj /p:Configuration=Release /p:Platform=Win32
+MSBuild msvc\vs2015.vcxproj /p:Configuration=Release /p:Platform=x64
+MSBuild msvc\vs2015.vcxproj /p:Configuration=Release /p:Platform=Win32
 ```
 
-也可以在 Visual Studio 开发人员命令提示符中直接编译单个源文件：
-
-```cmd
-cl.exe /EHsc /nologo /W3 /O2 /MT /DUNICODE /D_UNICODE ^
-  PESignAnalyzer.cpp Crypt32.lib Advapi32.lib /Fe:PESignAnalyzer.exe
-```
-
-源码也通过 `#pragma comment` 选择了 `Crypt32.lib` 和 `Advapi32.lib`。
-不需要、也不会链接 `Wintrust.lib`。
+实现代码按职责放在 `src/`，公开 API 位于 `include/pesignanalyzer/`。模块划分
+与依赖边界详见 [docs/architecture.md](docs/architecture.md)。两套构建系统都会链接
+`Crypt32.lib` 和 `Advapi32.lib`，不需要、也不会链接 `Wintrust.lib`。
 
 ## 测试
 
-可以分别对两个架构运行冒烟测试：
+可以分别对 `dist/` 中的两个发布架构运行冒烟测试：
 
 ```powershell
-.\tests\smoke.ps1 -Executable .\Build\PESignAnalyzer_VS2015_x64.exe
-.\tests\smoke.ps1 -Executable .\Build\PESignAnalyzer_VS2015_x86.exe
+.\tests\smoke.ps1 -Executable .\dist\bin_x64.exe
+.\tests\smoke.ps1 -Executable .\dist\bin_x86.exe
 ```
 
 测试覆盖命令行行为、嵌入式签名验证、篡改检测、Catalog 自动查找、Catalog

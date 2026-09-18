@@ -16,9 +16,19 @@ function Invoke-Analyzer {
 function Invoke-Arguments {
     param([string[]]$Arguments)
 
-    $output = & $Executable @Arguments 2>&1 | Out-String
+    # Windows PowerShell promotes native stderr to an ErrorRecord. Keep
+    # expected diagnostics in the captured output without terminating the test.
+    $previousErrorActionPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $output = & $Executable @Arguments 2>&1 | Out-String
+        $exitCode = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
     [pscustomobject]@{
-        ExitCode = $LASTEXITCODE
+        ExitCode = $exitCode
         Output = $output
     }
 }
