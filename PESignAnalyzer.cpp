@@ -1144,9 +1144,9 @@ BOOL GetSignerSignatureInfo(
         (PVOID)&pCertInfo->Issuer,
         NULL
     );
-    // Root certificate is always included pe file certstore,
-    // We can find it in system certstore.
-    if (!pCurrContext)
+    // The system root store is optional. Embedded signature parsing must
+    // continue to work when the current-user store is unavailable.
+    if (!pCurrContext && hSystemStore)
     {
         pCurrContext = CertFindCertificateInStore(hSystemStore,
             MY_ENCODING,
@@ -1185,11 +1185,6 @@ BOOL GetSignerCertificateInfo(
         CERT_SYSTEM_STORE_CURRENT_USER,
         L"Root"
     );
-    if (!hSystemStore)
-    {
-        INT error = GetLastError();
-        return FALSE;
-    }
     // Query file auth signature and cert store Object.
     HCRYPTMSG hAuthCryptMsg = NULL;
     DWORD dwEncoding = 0x00;
@@ -1207,7 +1202,7 @@ BOOL GetSignerCertificateInfo(
     if (!bReturn)
     {
         INT error = GetLastError();
-        CertCloseStore(hSystemStore, 0);
+        if (hSystemStore) CertCloseStore(hSystemStore, 0);
         return FALSE;
     }
     // Get signer information pointer.
@@ -1222,7 +1217,7 @@ BOOL GetSignerCertificateInfo(
     {
         INT error = GetLastError();
         CertCloseStore(AuthSignData.hCertStoreHandle, 0);
-        CertCloseStore(hSystemStore, 0);
+        if (hSystemStore) CertCloseStore(hSystemStore, 0);
         return FALSE;
     }
 
@@ -1288,7 +1283,7 @@ BOOL GetSignerCertificateInfo(
         bSucceed = TRUE;
         SignChain.push_back(SignNode);
     }
-    CertCloseStore(hSystemStore, 0);
+    if (hSystemStore) CertCloseStore(hSystemStore, 0);
     return bSucceed;
 }
 
