@@ -1304,8 +1304,11 @@ BOOL GetSignerCertificateInfo(
         if (pCounterSigner) LocalFree(pCounterSigner);
         if (iter->pSignerInfo) LocalFree(iter->pSignerInfo);
         if (iter->hCertStoreHandle) CertCloseStore(iter->hCertStoreHandle, 0);
-        bSucceed = TRUE;
-        SignChain.push_back(SignNode);
+        if (!SignNode.CertChain.empty())
+        {
+            bSucceed = TRUE;
+            SignChain.push_back(SignNode);
+        }
     }
     if (hSystemStore) CertCloseStore(hSystemStore, 0);
     return bSucceed;
