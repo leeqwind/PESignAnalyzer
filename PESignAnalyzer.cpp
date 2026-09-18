@@ -22,6 +22,7 @@
 #include <algorithm>
 #include <string>
 #include <iostream>
+#include <vector>
 
 using namespace std;
 
@@ -1063,32 +1064,45 @@ BOOL CalculateSignSerial(
     DWORD cbData,
     std::string & Serial
 ) {
-    BOOL    bReturn         = FALSE;
-    DWORD   dwSize          = 0x400;
-    BYTE    abSerial[0x400] = { 0 };
-    CHAR    NameBuff[0x400] = { 0 };
+    BOOL  bReturn = FALSE;
+    DWORD dwSize  = 0;
 
     Serial.clear();
-    for (UINT uiIter = 0; uiIter < cbData && uiIter < 0x400; uiIter++)
+    if (!pbData || cbData == 0)
+    {
+        return FALSE;
+    }
+    std::vector<BYTE> abSerial(cbData);
+    for (DWORD uiIter = 0; uiIter < cbData; uiIter++)
     {
         abSerial[uiIter] = pbData[cbData - 1 - uiIter];
     }
-    bReturn = CryptBinaryToStringA(abSerial, cbData, CRYPT_STRING_HEX, NameBuff, &dwSize);
+    bReturn = CryptBinaryToStringA(&abSerial[0], cbData,
+        CRYPT_STRING_HEX, NULL, &dwSize);
     if (!bReturn)
     {
         return FALSE;
     }
-    DWORD dwIter1 = 0;
-    DWORD dwIter2 = 0;
-    for (dwIter1 = 0; dwIter1 < dwSize; dwIter1++)
+    std::vector<CHAR> NameBuff(dwSize + 1, 0);
+    DWORD dwBufferSize = (DWORD)NameBuff.size();
+    bReturn = CryptBinaryToStringA(&abSerial[0], cbData,
+        CRYPT_STRING_HEX, &NameBuff[0], &dwBufferSize);
+    if (!bReturn)
     {
-        if (!isspace(NameBuff[dwIter1]))
+        return FALSE;
+    }
+    DWORD dwIter2 = 0;
+    for (DWORD dwIter1 = 0;
+        dwIter1 < dwBufferSize && NameBuff[dwIter1] != '\0';
+        dwIter1++)
+    {
+        if (!isspace((unsigned char)NameBuff[dwIter1]))
         {
             NameBuff[dwIter2++] = NameBuff[dwIter1];
         }
     }
     NameBuff[dwIter2] = '\0';
-    Serial = std::string(NameBuff);
+    Serial = std::string(&NameBuff[0]);
     StripString(Serial);
     return TRUE;
 }
