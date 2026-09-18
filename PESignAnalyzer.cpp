@@ -1436,47 +1436,24 @@ BOOL CheckFileDigitalSignature(
             if (szBuffer) free(szBuffer);
             break;
         }
-        // Get catalog Context structure.
-        // First pass: count catalogs (and release them on the fly).
-        // Note: CryptCATAdminEnumCatalogFromHash sets *ppPrevCatalogInfo to NULL on output.
-        UINT     uiCataLimit = 0x00;
+        // Enumerate catalogs by passing the previous returned context back to
+        // the API. The API advances and releases the previous enumeration
+        // context; retain the last successfully resolved catalog path.
         HCATINFO CataContext = NULL;
-        HCATINFO CataContextNext = NULL;
-        CataContextNext = CryptCATAdminEnumCatalogFromHash(Context,
+        CataContext = CryptCATAdminEnumCatalogFromHash(Context,
             szBuffer,
             dwHashSize,
             0,
-            NULL
+            &CataContext
         );
-        while (CataContextNext)
+        while (CataContext)
         {
-            if (CataContext)
+            CATALOG_INFO CataInfo = { 0 };
+            CataInfo.cbStruct = sizeof(CATALOG_INFO);
+            if (CryptCATCatalogInfoFromContext(CataContext, &CataInfo, 0))
             {
-                CryptCATAdminReleaseCatalogContext(Context, CataContext, 0);
-            }
-            CataContext = CataContextNext;
-            uiCataLimit++;
-            CataContextNext = CryptCATAdminEnumCatalogFromHash(Context,
-                szBuffer,
-                dwHashSize,
-                0,
-                &CataContext
-            );
-            // After call, CataContext has been set to NULL by the API.
-        }
-        if (CataContext)
-        {
-            CryptCATAdminReleaseCatalogContext(Context, CataContext, 0);
-            CataContext = NULL;
-        }
-        // Second pass: re-enumerate to the last catalog (uiCataLimit-th entry).
-        for (UINT uiIter = 0; uiIter < uiCataLimit; uiIter++)
-        {
-            // Release previous to avoid leak in second pass.
-            if (CataContext)
-            {
-                CryptCATAdminReleaseCatalogContext(Context, CataContext, 0);
-                CataContext = NULL;
+                CataFile = CataInfo.wszCatalogFile;
+                bHasCatalog = !CataFile.empty();
             }
             CataContext = CryptCATAdminEnumCatalogFromHash(Context,
                 szBuffer,
@@ -1487,22 +1464,6 @@ BOOL CheckFileDigitalSignature(
         }
         free(szBuffer);
         szBuffer = NULL;
-        if (!CataContext)
-        {
-            break;
-        }
-        // Get catalog information from the last catalog found.
-        CATALOG_INFO CataInfo = { 0 };
-        CataInfo.cbStruct = sizeof(CATALOG_INFO);
-        bReturn = CryptCATCatalogInfoFromContext(CataContext, &CataInfo, 0);
-        if (bReturn)
-        {
-            CataFile = CataInfo.wszCatalogFile;
-            bHasCatalog = !CataFile.empty();
-        }
-                // Release catalog Context structure.
-                CryptCATAdminReleaseCatalogContext(Context, CataContext, 0);
-                CataContext = NULL;
             } while (FALSE);
             if (Context)
             {
