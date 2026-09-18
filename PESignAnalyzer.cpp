@@ -1233,6 +1233,7 @@ BOOL GetSignerCertificateInfo(
         LPCSTR              szObjId        = NULL;
         PCMSG_SIGNER_INFO   pCounterSigner = NULL;
         SIGN_NODE_INFO      SignNode;
+        CERT_INFO           SignerCertInfo = { 0 };
 
         GetAuthedAttribute(iter->pSignerInfo);
         // Get signature timestamp.
@@ -1252,16 +1253,15 @@ BOOL GetSignerCertificateInfo(
         CalculateDigestAlgorithm(szObjId, SignNode.DigestAlgorithm);
         // Get signature version.
         CalculateSignVersion(iter->pSignerInfo->dwVersion, SignNode.Version);
-        // Find the first certificate Context information.
-        // NOTE: CMSG_SIGNER_INFO.Issuer == the issuer of the signer cert
-        // (the CA subject name). CERT_FIND_ISSUER_NAME finds the cert
-        // whose ISSUER field matches the given name, which is our leaf
-        // signer certificate (its issuer == SignerInfo.Issuer).
+        // Match both issuer and serial number so another certificate issued
+        // by the same CA cannot be mistaken for the signer certificate.
+        SignerCertInfo.Issuer = iter->pSignerInfo->Issuer;
+        SignerCertInfo.SerialNumber = iter->pSignerInfo->SerialNumber;
         pCurrContext = CertFindCertificateInStore(iter->hCertStoreHandle,
             MY_ENCODING,
             0,
-            CERT_FIND_ISSUER_NAME,
-            (PVOID)&iter->pSignerInfo->Issuer,
+            CERT_FIND_SUBJECT_CERT,
+            &SignerCertInfo,
             NULL
         );
         bReturn = (pCurrContext != NULL);
