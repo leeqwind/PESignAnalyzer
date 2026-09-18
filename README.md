@@ -19,6 +19,36 @@ This code uses `CryptoAPIs` to parse the signature and certificate data from spe
 > **重要：** PESignAnalyzer 只提取签名元数据，不验证文件完整性、证书信任、
 > 吊销状态或签名策略。如需依据签名有效性作安全决策，请使用 `WinVerifyTrust`。
 
+## Command Line
+
+```text
+Usage: PESignAnalyzer.exe [options] <file>
+
+Options:
+  -c, --catalog <file>  Use a specific catalog as fallback.
+      --embedded-only   Do not search for a catalog signature.
+  -h, --help, /?        Show help and exit.
+  -V, --version         Show version information and exit.
+      --                 Stop processing options.
+```
+
+The original invocation remains supported:
+
+```cmd
+PESignAnalyzer.exe C:\Windows\System32\notepad.exe
+```
+
+Use `--` before a file name that begins with a hyphen. Exit code `0` means
+analysis succeeded (or help/version was requested), `1` means no readable
+signature was found, and `2` indicates an invalid command line.
+
+### 命令行参数
+
+原有的直接传入文件路径方式保持兼容。可使用 `--catalog` 指定备用 Catalog，
+使用 `--embedded-only` 禁止搜索 Catalog。以连字符开头的文件名应放在 `--`
+之后。退出码 `0` 表示分析成功，`1` 表示未找到可读取的签名，`2` 表示命令行
+参数错误。
+
 ## Running Demo
 
 运行演示

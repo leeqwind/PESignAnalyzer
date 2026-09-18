@@ -38,6 +38,8 @@ using namespace std;
 #pragma comment(lib, "Wintrust.lib")
 #pragma comment(lib, "Advapi32.lib")
 
+#define PESIGNANALYZER_VERSION "1.1.0"
+
 typedef struct _SIGN_COUNTER_SIGN {
     std::string SignerName;
     std::string MailAddress;
@@ -1474,24 +1476,121 @@ BOOL AnalyzeFileDigitalSignature(
     return bReturn;
 }
 
+VOID PrintUsage()
+{
+    std::cout
+        << "PESignAnalyzer " PESIGNANALYZER_VERSION << endl
+        << "Usage: PESignAnalyzer.exe [options] <file>" << endl
+        << endl
+        << "Options:" << endl
+        << "  -c, --catalog <file>  Use a specific catalog as fallback." << endl
+        << "      --embedded-only   Do not search for a catalog signature." << endl
+        << "  -h, --help, /?        Show this help and exit." << endl
+        << "  -V, --version         Show version information and exit." << endl
+        << "      --                 Stop processing options." << endl;
+}
+
+INT CommandLineError(LPCWSTR Message)
+{
+    if (Message && *Message)
+    {
+        std::wcerr << L"Error: " << Message << endl << endl;
+    }
+    PrintUsage();
+    return 0x02;
+}
+
 INT wmain(INT argc, WCHAR *argv[])
 {
-    if (argc != 2)
+    LPCWSTR pwzFilePath = NULL;
+    LPCWSTR pwzCatalogPath = NULL;
+    BOOL bEmbeddedOnly = FALSE;
+    BOOL bProcessOptions = TRUE;
+
+    for (INT index = 1; index < argc; index++)
     {
-        std::cout << "Parameter error!" << endl;
-        std::cout << "Usage: PESignAnalyzer.exe filepath" << endl;
-        return 0x01;
+        LPCWSTR argument = argv[index];
+        if (bProcessOptions && !lstrcmpW(argument, L"--"))
+        {
+            bProcessOptions = FALSE;
+        }
+        else if (bProcessOptions && (!lstrcmpW(argument, L"-h") ||
+            !lstrcmpW(argument, L"--help") || !lstrcmpW(argument, L"/?")))
+        {
+            PrintUsage();
+            return 0x00;
+        }
+        else if (bProcessOptions && (!lstrcmpW(argument, L"-V") ||
+            !lstrcmpW(argument, L"--version")))
+        {
+            std::cout << "PESignAnalyzer " PESIGNANALYZER_VERSION << endl;
+            return 0x00;
+        }
+        else if (bProcessOptions && (!lstrcmpW(argument, L"-c") ||
+            !lstrcmpW(argument, L"--catalog")))
+        {
+            if (++index >= argc)
+            {
+                return CommandLineError(L"--catalog requires a file path.");
+            }
+            pwzCatalogPath = argv[index];
+            if (!*pwzCatalogPath)
+            {
+                return CommandLineError(L"The catalog path cannot be empty.");
+            }
+        }
+        else if (bProcessOptions &&
+            !wcsncmp(argument, L"--catalog=", 10))
+        {
+            pwzCatalogPath = argument + 10;
+            if (!*pwzCatalogPath)
+            {
+                return CommandLineError(L"The catalog path cannot be empty.");
+            }
+        }
+        else if (bProcessOptions &&
+            !lstrcmpW(argument, L"--embedded-only"))
+        {
+            bEmbeddedOnly = TRUE;
+        }
+        else if (bProcessOptions && argument[0] == L'-')
+        {
+            std::wstring message = L"Unknown option: ";
+            message += argument;
+            return CommandLineError(message.c_str());
+        }
+        else if (pwzFilePath)
+        {
+            return CommandLineError(L"Only one input file can be analyzed at a time.");
+        }
+        else
+        {
+            pwzFilePath = argument;
+        }
+    }
+
+    if (!pwzFilePath)
+    {
+        return CommandLineError(L"An input file is required.");
+    }
+    if (bEmbeddedOnly && pwzCatalogPath)
+    {
+        return CommandLineError(
+            L"--embedded-only cannot be combined with --catalog.");
+    }
+    if (bEmbeddedOnly)
+    {
+        pwzCatalogPath = L"";
     }
 
     BOOL            bReturn     = FALSE;
-    PWCHAR          pwzFilePath = NULL;
     std::wstring    CataFile;
     std::string     SignType;
     std::list<SIGN_NODE_INFO> SignChain;
 
-    pwzFilePath = argv[1];
     std::wcout << L"filepath: " << pwzFilePath << endl;
-    bReturn = AnalyzeFileDigitalSignature(pwzFilePath, NULL, CataFile, SignType, SignChain);
+    bReturn = AnalyzeFileDigitalSignature(pwzFilePath, pwzCatalogPath,
+        CataFile, SignType, SignChain);
     if (!bReturn)
     {
         std::cout << "signtype: " << "none" << endl;
