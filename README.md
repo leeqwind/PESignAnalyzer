@@ -6,9 +6,10 @@ This program is used to get signature information from PE files which signed by 
 
 This code uses `CryptoAPIs` to parse the signature and certificate data from specified file, supporting many file types, such as .exe, .cat(catalog file), .dll, .sys, etc.
 
-> **Important:** PESignAnalyzer extracts signature metadata. It does not verify
-> file integrity, certificate trust, revocation status, or signing policy. Use
-> `WinVerifyTrust` when a security decision depends on signature validity.
+PESignAnalyzer can also verify Authenticode content digests, CMS signatures,
+RFC 3161 and legacy timestamps, certificate chains, and optional revocation
+status. It performs these checks with CryptoAPI and does not import or call any
+API from `Wintrust.dll`.
 
 一个简单的PE文件签名信息提取工具。
 
@@ -16,8 +17,9 @@ This code uses `CryptoAPIs` to parse the signature and certificate data from spe
 
 这份代码使用`CryptoAPIs`来解析指定文件中的签名和证书数据，支持多种文件类型，包括exe，cat（catalog文件），dll，sys等格式。
 
-> **重要：** PESignAnalyzer 只提取签名元数据，不验证文件完整性、证书信任、
-> 吊销状态或签名策略。如需依据签名有效性作安全决策，请使用 `WinVerifyTrust`。
+PESignAnalyzer 还可以验证 Authenticode 内容摘要、CMS 签名、RFC 3161 及旧式
+时间戳、证书链与可选的吊销状态。整个验证过程仅使用 CryptoAPI，不导入、也不
+调用 `Wintrust.dll` 中的任何 API。
 
 ## Command Line
 
@@ -26,7 +28,10 @@ Usage: PESignAnalyzer.exe [options] <file>
 
 Options:
   -c, --catalog <file>  Use a specific catalog as fallback.
-      --embedded-only   Do not search for a catalog signature.
+      --embedded-only   Require an embedded signature.
+      --verify          Verify the Authenticode signature.
+      --revocation <mode>
+                        Revocation mode: none, cache, or online.
   -h, --help, /?        Show help and exit.
   -V, --version         Show version information and exit.
       --                 Stop processing options.
@@ -38,16 +43,22 @@ The original invocation remains supported:
 PESignAnalyzer.exe C:\Windows\System32\notepad.exe
 ```
 
-Use `--` before a file name that begins with a hyphen. Exit code `0` means
-analysis succeeded (or help/version was requested), `1` means no readable
-signature was found, and `2` indicates an invalid command line.
+Catalog discovery is intentionally not automatic because it would require the
+WinTrust catalog-administration APIs. Pass the catalog explicitly with
+`--catalog`. Use `--` before a file name that begins with a hyphen.
+
+Exit code `0` means analysis or verification succeeded, `1` means no readable
+signature was found, `2` indicates an invalid command line, `3` means signature
+verification failed, and `4` means the result is indeterminate (for example,
+revocation status could not be obtained).
 
 ### 命令行参数
 
-原有的直接传入文件路径方式保持兼容。可使用 `--catalog` 指定备用 Catalog，
-使用 `--embedded-only` 禁止搜索 Catalog。以连字符开头的文件名应放在 `--`
-之后。退出码 `0` 表示分析成功，`1` 表示未找到可读取的签名，`2` 表示命令行
-参数错误。
+原有的直接传入文件路径方式保持兼容。严格模式不会自动发现 Catalog（该过程
+需要 WinTrust 目录管理 API），目录签名必须通过 `--catalog` 显式指定。使用
+`--verify` 启用验证；`--revocation none|cache|online` 设置吊销检查模式并隐含
+启用验证。退出码 `0` 表示成功，`1` 表示未找到签名，`2` 表示参数错误，`3`
+表示验证失败，`4` 表示结果无法确定。
 
 ## Running Demo
 
@@ -126,11 +137,11 @@ If you only have the Visual Studio Build Tools installed (no IDE), you can compi
 :: (1) Set up the build environment (choose the vcvars matching your tools version)
 call "C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
 
-:: (2) Compile. Crypt32.lib / Wintrust.lib / Advapi32.lib are also auto-imported
+:: (2) Compile. Crypt32.lib / Advapi32.lib are also auto-imported
 ::     via #pragma comment(lib, ...) inside the source, so listing them on the
 ::     command line is optional but kept for explicitness.
 cl.exe /EHsc /nologo /W3 /DUNICODE /D_UNICODE PESignAnalyzer.cpp ^
-       Crypt32.lib Wintrust.lib Advapi32.lib /Fe:PESignAnalyzer.exe
+       Crypt32.lib Advapi32.lib /Fe:PESignAnalyzer.exe
 ```
 
 Compiler flags explained:
@@ -147,7 +158,6 @@ Required import libraries:
 | Library | APIs it provides |
 |---------|------------------|
 | `Crypt32.lib`  | `Cert*`, `CryptMsg*`, `CryptDecodeObject*` (CryptoAPI / certificate store) |
-| `Wintrust.lib` | `CryptCATAdmin*` (catalog / WinTrust helpers) |
 | `Advapi32.lib` | Legacy CryptoAPI: `CryptAcquireContext`, `CryptCreateHash`, `CryptHashData`, `CryptGetHashParam` ... |
 
 After a successful build, run it against any system binary to confirm:
@@ -187,10 +197,10 @@ MSBuild MSVC\PESignAnalyzer_VS2015.vcxproj /p:Configuration=Debug   /p:Platform=
 :: (1) 配置编译环境（按实际工具链版本选择 vcvars 路径）
 call "C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
 
-:: (2) 编译。Crypt32.lib / Wintrust.lib / Advapi32.lib 已通过源码顶部的
+:: (2) 编译。Crypt32.lib / Advapi32.lib 已通过源码顶部的
 ::     #pragma comment(lib, ...) 自动引入，命令行中显式列出是为了便于理解。
 cl.exe /EHsc /nologo /W3 /DUNICODE /D_UNICODE PESignAnalyzer.cpp ^
-       Crypt32.lib Wintrust.lib Advapi32.lib /Fe:PESignAnalyzer.exe
+       Crypt32.lib Advapi32.lib /Fe:PESignAnalyzer.exe
 ```
 
 编译参数说明：
@@ -207,7 +217,6 @@ cl.exe /EHsc /nologo /W3 /DUNICODE /D_UNICODE PESignAnalyzer.cpp ^
 | 库 | 提供的 API |
 |----|-----------|
 | `Crypt32.lib`  | `Cert*`、`CryptMsg*`、`CryptDecodeObject*`（证书、消息、解码） |
-| `Wintrust.lib` | `CryptCATAdmin*`（Catalog / 目录签名相关） |
 | `Advapi32.lib` | Legacy CryptoAPI：`CryptAcquireContext`、`CryptCreateHash`、`CryptHashData`、`CryptGetHashParam` 等 |
 
 编译成功后可以用任意系统文件验证输出：
@@ -220,13 +229,15 @@ PESignAnalyzer.exe C:\Windows\System32\notepad.exe
 
 多签名支持
 
-This code does not use `WinVerifyTrust` to verify and retrieve signature and certificate information, but `CryptoAPIs` instead.
+This code does not use any `Wintrust.dll` API. Signature parsing and verification
+are implemented with CryptoAPI, including explicit catalog membership checks.
 
 It might also be noted that this program supports analyzing multi-signed PE files, even though on the OS platforms which does not support multi-signature detecting, such as Windows 7, Windows Vista, etc. Multi-signed PE file means that this file has been signed by more than one embedded code signature certificate.
 
 If you transfer the path to a multi-signatured file into PESignAnalyzer process, it will show the target information as below. Every `[The X Sign Info]` means a chunk of completed information of a signature block.
 
-这份代码没有使用`WinVerifyTrust`来验证和获取签名证书信息，而是用`CryptoAPIs`代替。
+这份代码不使用任何 `Wintrust.dll` API；签名解析、验证及显式 Catalog 成员校验
+均通过 CryptoAPI 实现。
 
 需要注意的是，这个程序支持解析多签名的PE文件，即使是在诸如Windows 7，Windows Vista这种不支持多签名检测的操作系统平台上。多签名的PE文件意味着这个文件已经被多个嵌入式代码签名证书所签名了。
 

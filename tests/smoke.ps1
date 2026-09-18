@@ -64,6 +64,11 @@ if ($missingCatalog.ExitCode -ne 2) {
     throw 'A missing --catalog value did not return usage exit code 2.'
 }
 
+$invalidRevocation = Invoke-Arguments @('--revocation', 'sometimes', 'unused.exe')
+if ($invalidRevocation.ExitCode -ne 2) {
+    throw 'An invalid --revocation value did not return usage exit code 2.'
+}
+
 $optionConflict = Invoke-Arguments @(
     '--catalog', 'unused.cat', '--embedded-only', 'unused.exe')
 if ($optionConflict.ExitCode -ne 2) {
@@ -101,6 +106,39 @@ if ($embeddedPath) {
         'Embedded signature was not identified.'
     Assert-Match $embedded.Output '\|- subject:\s+\S' `
         'Embedded signature did not produce a signer certificate.'
+
+    $verified = Invoke-Arguments @('--verify', $embeddedPath)
+    if ($verified.ExitCode -ne 0) {
+        throw "Embedded verification failed for $embeddedPath.`n$($verified.Output)"
+    }
+    Assert-Match $verified.Output 'verification\.contentDigest:\s+valid' `
+        'The embedded Authenticode digest was not validated.'
+    Assert-Match $verified.Output 'verification\.cmsSignature:\s+valid' `
+        'The embedded CMS signature was not validated.'
+    Assert-Match $verified.Output 'verification\.overall:\s+valid' `
+        'The embedded signature was not reported as valid.'
+
+    $temporaryFile = Join-Path ([IO.Path]::GetTempPath()) `
+        ("PESignAnalyzer-{0}.exe" -f [guid]::NewGuid())
+    try {
+        [IO.File]::Copy($embeddedPath, $temporaryFile)
+        $bytes = [IO.File]::ReadAllBytes($temporaryFile)
+        $peOffset = [BitConverter]::ToInt32($bytes, 0x3c)
+        $optionalSize = [BitConverter]::ToUInt16($bytes, $peOffset + 20)
+        $sectionOffset = $peOffset + 24 + $optionalSize
+        $rawOffset = [BitConverter]::ToUInt32($bytes, $sectionOffset + 20)
+        $bytes[$rawOffset + 16] = $bytes[$rawOffset + 16] -bxor 1
+        [IO.File]::WriteAllBytes($temporaryFile, $bytes)
+        $tampered = Invoke-Arguments @('--verify', $temporaryFile)
+        if ($tampered.ExitCode -ne 3) {
+            throw 'Tampered input did not return verification exit code 3.'
+        }
+        Assert-Match $tampered.Output 'verification\.contentDigest:\s+invalid' `
+            'Tampered input was not rejected by the content digest check.'
+    }
+    finally {
+        Remove-Item -LiteralPath $temporaryFile -Force -ErrorAction SilentlyContinue
+    }
 }
 
 $catalogPath = Join-Path $env:SystemRoot 'System32\notepad.exe'
@@ -108,31 +146,20 @@ if (Test-Path -LiteralPath $catalogPath) {
     $signature = Get-AuthenticodeSignature -LiteralPath $catalogPath
     if ($signature.SignatureType -eq 'Catalog') {
         $catalog = Invoke-Analyzer $catalogPath
-        if ($catalog.ExitCode -ne 0) {
-            throw "Catalog signature analysis failed for $catalogPath.`n$($catalog.Output)"
+        if ($catalog.ExitCode -ne 1) {
+            throw 'Strict mode unexpectedly performed automatic catalog discovery.'
         }
-        Assert-Match $catalog.Output 'signtype:\s+cataloged' `
-            'Catalog signature was not identified.'
-        Assert-Match $catalog.Output 'catafile:\s+.+\.cat' `
-            'Catalog signature did not report its catalog file.'
+        Assert-Match $catalog.Output 'signtype:\s+none' `
+            'A catalog-only file was not reported as unsigned without --catalog.'
 
-        $embeddedOnly = Invoke-Arguments @('--embedded-only', $catalogPath)
-        if ($embeddedOnly.ExitCode -eq 0) {
-            throw '--embedded-only unexpectedly accepted a catalog-only file.'
-        }
-        Assert-Match $embeddedOnly.Output 'signtype:\s+none' `
-            '--embedded-only did not disable catalog discovery.'
-
-        $catalogMatch = [regex]::Match(
-            $catalog.Output, '(?m)^catafile:\s+(.+\.cat)\s*$')
-        if ($catalogMatch.Success) {
-            $explicitCatalog = Invoke-Arguments @(
-                '--catalog', $catalogMatch.Groups[1].Value, $catalogPath)
+        if ($env:PESIGN_TEST_CATALOG) {
+            $explicitCatalog = Invoke-Arguments @('--verify', '--catalog',
+                $env:PESIGN_TEST_CATALOG, $catalogPath)
             if ($explicitCatalog.ExitCode -ne 0) {
-                throw '--catalog failed with the discovered catalog file.'
+                throw "Explicit catalog verification failed.`n$($explicitCatalog.Output)"
             }
-            Assert-Match $explicitCatalog.Output 'signtype:\s+cataloged' `
-                '--catalog did not analyze the specified catalog.'
+            Assert-Match $explicitCatalog.Output 'verification\.overall:\s+valid' `
+                'Explicit catalog membership was not verified.'
         }
     }
 }
