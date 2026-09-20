@@ -1,6 +1,6 @@
 #pragma once
 
-#include "pesignanalyzer/types.h"
+#include "analyzer/types.h"
 
 #define PESIGNANALYZER_VERSION "1.3.0"
 

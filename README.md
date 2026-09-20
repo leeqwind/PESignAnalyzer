@@ -163,7 +163,7 @@ MSBuild msvc\vs2015.vcxproj /p:Configuration=Release /p:Platform=Win32
 ```
 
 The implementation is organized under `src/`, with its public API under
-`include/pesignanalyzer/`. See [docs/architecture.md](docs/architecture.md)
+`include/analyzer/`. See [docs/architecture.md](docs/architecture.md)
 for the module map and ownership boundaries.
 
 Both build systems link `Crypt32.lib` and `Advapi32.lib`. `Wintrust.lib` is

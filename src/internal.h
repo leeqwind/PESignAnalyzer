@@ -1,6 +1,6 @@
 #pragma once
 
-#include "pesignanalyzer/analyzer.h"
+#include "analyzer/analyzer.h"
 
 #include <algorithm>
 #include <iostream>

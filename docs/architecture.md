@@ -5,7 +5,7 @@ cryptography implementation by responsibility.
 
 | Path | Responsibility |
 |---|---|
-| `include/pesignanalyzer/` | Public data types and analyzer API |
+| `include/analyzer/` | Public data types and analyzer API |
 | `src/main.cpp` | Command-line parsing, output, and exit codes |
 | `src/analyzer.cpp` | High-level embedded/catalog analysis selection |
 | `src/signature_parser.cpp` | CMS signer, nested signature, and timestamp parsing |
@@ -22,7 +22,7 @@ cryptography implementation by responsibility.
 The public headers intentionally expose the existing API and result structures
 without introducing a binary compatibility layer. Implementation helpers stay
 under `src/`; applications should include only
-`pesignanalyzer/analyzer.h`.
+`analyzer/analyzer.h`.
 
 CMake builds the implementation as `PESignAnalyzerCore` and links the thin
 command-line executable against it. The legacy Visual Studio projects compile

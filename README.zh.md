@@ -153,7 +153,7 @@ MSBuild msvc\vs2015.vcxproj /p:Configuration=Release /p:Platform=x64
 MSBuild msvc\vs2015.vcxproj /p:Configuration=Release /p:Platform=Win32
 ```
 
-实现代码按职责放在 `src/`，公开 API 位于 `include/pesignanalyzer/`。模块划分
+实现代码按职责放在 `src/`，公开 API 位于 `include/analyzer/`。模块划分
 与依赖边界详见 [docs/architecture.md](docs/architecture.md)。两套构建系统都会链接
 `Crypt32.lib` 和 `Advapi32.lib`，不需要、也不会链接 `Wintrust.lib`。
 

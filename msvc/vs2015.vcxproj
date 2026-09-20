@@ -28,8 +28,8 @@
     <ClCompile Include="../src/signature_parser.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="../include/pesignanalyzer/analyzer.h" />
-    <ClInclude Include="../include/pesignanalyzer/types.h" />
+    <ClInclude Include="../include/analyzer/analyzer.h" />
+    <ClInclude Include="../include/analyzer/types.h" />
     <ClInclude Include="../src/internal.h" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
