@@ -1,4 +1,7 @@
-# PESignAnalyzer keeps the release executables under dist/ in version control.
+# The original Windows CryptoAPI release executables stay under dist/.
+# OpenSSL build outputs and packages are local generated artifacts.
+/dist/openssl/
+/dist/PESignAnalyzerOpenSSL-*.zip
 
 # CMake build trees and generated metadata
 .build/

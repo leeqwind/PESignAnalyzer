@@ -3,6 +3,21 @@
 PESignAnalyzer keeps the command-line application thin and groups the Windows
 cryptography implementation by responsibility.
 
+The independent [`openssl/`](../openssl/README.md) subproject uses C++17,
+OpenSSL Crypto, and libcurl to parse and verify PE Authenticode signatures on
+Windows, Linux, and macOS. Its public headers contain no platform or OpenSSL
+types. `digest.cpp` computes PE hashes, `catalog.cpp` finds signed CTL members,
+`verification.cpp` verifies signers and bound timestamps, and `trust.cpp` builds
+chains and checks CRL/OCSP status through bounded HTTP in `network.cpp`.
+Windows Crypt32 and macOS Security/CoreFoundation provide native trust anchors
+and distrust settings; cryptographic verification uses OpenSSL. Linux uses the
+OpenSSL trust store. Explicit CA, CRL, catalog, and cache paths support portable
+deployment. Metadata remains separate from verification verdicts, and each
+signer has its own result; the first primary signer supplies the summary.
+Default file analysis also resolves each signer's local certificate chain and
+reports full root metadata. Chain completeness is separate from trust validation;
+metadata resolution does not download issuers or perform revocation checks.
+
 | Path | Responsibility |
 |---|---|
 | `include/analyzer/` | Public data types and analyzer API |

@@ -2,6 +2,14 @@
 
 [简体中文](README.zh.md)
 
+An independent OpenSSL cross-platform version is available under
+[`openssl/`](openssl/README.md), with its own CMake build targeting Windows,
+Linux, and macOS. It implements embedded and catalog signature parsing, image
+digest and cryptographic verification, both timestamp formats, certificate
+chains, and cached/online revocation checks. The rest of this page describes
+the original Windows CryptoAPI version; see the subproject for its dependencies,
+options, and trust policy.
+
 PESignAnalyzer is a Windows command-line tool for inspecting and verifying
 Authenticode signatures on PE files. It supports embedded signatures and
 catalog-signed files, including automatic discovery of installed system

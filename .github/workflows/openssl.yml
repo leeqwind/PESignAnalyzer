@@ -1,0 +1,48 @@
+name: OpenSSL analyzer
+
+on:
+  push:
+    paths: ['openssl/**', '.github/workflows/openssl.yml']
+  pull_request:
+    paths: ['openssl/**', '.github/workflows/openssl.yml']
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+          - os: macos-latest
+          - os: windows-latest
+            architecture: x64
+            triplet: x64-windows
+          - os: windows-latest
+            architecture: Win32
+            triplet: x86-windows
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Linux dependencies and configure
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev libcurl4-openssl-dev
+          cmake -S openssl -B build/openssl -DCMAKE_BUILD_TYPE=Release
+      - name: macOS dependencies and configure
+        if: runner.os == 'macOS'
+        run: |
+          brew install openssl@3 curl
+          cmake -S openssl -B build/openssl -DCMAKE_BUILD_TYPE=Release -DOPENSSL_ROOT_DIR="$(brew --prefix openssl@3)" -DCURL_ROOT="$(brew --prefix curl)"
+      - name: Windows dependencies and configure
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          & "$env:VCPKG_INSTALLATION_ROOT/vcpkg.exe" install "openssl:${{ matrix.triplet }}" "curl:${{ matrix.triplet }}"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake -S openssl -B build/openssl -A ${{ matrix.architecture }} "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }}
+      - name: Build
+        run: cmake --build build/openssl --config Release --parallel
+      - name: Test
+        run: ctest --test-dir build/openssl -C Release --output-on-failure

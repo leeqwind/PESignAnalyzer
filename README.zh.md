@@ -2,6 +2,11 @@
 
 [English](README.md)
 
+基于 OpenSSL 的跨平台版本位于 [`openssl/`](openssl/README.md)，使用独立的
+CMake 构建入口，目标平台为 Windows、Linux 和 macOS。已移植嵌入式及 Catalog
+签名解析、内容摘要和密码学验签、两类时间戳、证书链与缓存/在线吊销检查。
+下文介绍原 Windows CryptoAPI 版本；跨平台版本的依赖、选项和信任策略见子目录文档。
+
 PESignAnalyzer 是一个用于分析和验证 Windows PE 文件 Authenticode 签名的
 命令行工具。它支持嵌入式签名和 Catalog 目录签名，并能自动查找系统中已经安装
 的 Catalog。
