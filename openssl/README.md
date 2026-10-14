@@ -77,6 +77,33 @@ Windows 链接 Crypt32，macOS 链接 Security/CoreFoundation 读取系统信任
 验签和构链均由 OpenSSL 执行。使用 -DBUILD_TESTING=OFF 关闭测试，
 或 cmake --install <build-dir> --prefix <目录> 安装。
 
+## GitHub Release 发布
+
+`.github/workflows/release.yml` 独立执行发布构建。推送新的 `v*` 版本 tag 会自动发布；
+已有 tag 可在 Actions → Release OpenSSL analyzer → Run workflow 中选择 `master`，
+在 `tag` 输入框填写已有 tag（例如 `v1.3.0`）。GitHub 的手动输入框不提供动态 tag 下拉列表。
+也可使用命令：
+
+```sh
+gh workflow run release.yml --ref master -f tag=v1.3.0
+```
+
+发布工具使用所选工作流版本，产品源码严格使用 tag 对应的提交，因此不必移动旧 tag。
+四个平台全部构建、测试及解压后 CLI 冒烟检查通过，才会创建 Release 并上传附件：
+
+| 包 | 运行要求 |
+|---|---|
+| `PESignAnalyzerOpenSSL-<tag>-windows-x64.zip` | Windows x64；静态链接依赖和 MSVC 运行库 |
+| `PESignAnalyzerOpenSSL-<tag>-windows-x86.zip` | Windows x86/x64；静态链接依赖和 MSVC 运行库 |
+| `PESignAnalyzerOpenSSL-<tag>-linux-x64.tar.gz` | Ubuntu 24.04+、glibc 2.39+，安装 `libssl3t64 libcurl4t64 ca-certificates` |
+| `PESignAnalyzerOpenSSL-<tag>-macos-arm64.tar.gz` | macOS 15+、Apple Silicon；附带非系统 dylib，使用 ad-hoc 签名，未经公证 |
+
+这些是解压运行包；当前不生成 MSI/DMG，也不包含 macOS Intel 或 Linux arm64。
+附件提供独立的 `.sha256` 校验文件，包内 `BUILD-INFO.json` 记录 tag、源码提交、平台及
+OpenSSL 子项目版本。仓库 tag 与 OpenSSL 子项目版本独立，例如 `v1.3.0` 中子项目仍为 `0.2.2`。
+安装包也会保存在该次 Actions 的 artifacts 中，保留 14 天。
+重跑同一 tag 会替换同名 Release 附件；发布前会再次检查远端 tag 未移动。
+
 ## 使用
 
 ```sh
