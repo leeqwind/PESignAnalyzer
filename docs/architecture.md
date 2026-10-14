@@ -30,7 +30,7 @@ metadata resolution does not download issuers or perform revocation checks.
 | `src/catalog.cpp` | Catalog loading, matching, and system catalog discovery |
 | `src/internal.h` | Private declarations shared only by implementation units |
 | `msvc/` | Legacy Visual Studio 2013/2015 project entry points |
-| `dist/` | Packaged x86 and x64 Release executables |
+| `.github/workflows/release.yml` | Build, test, package and publish both analyzers from version tags |
 | `tests/` | Executable-level smoke tests |
 | `blog/` | Long-form documentation and diagrams |
 

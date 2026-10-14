@@ -36,10 +36,12 @@ Current version: **1.3.0**
 | Legacy PKCS#9 countersignatures | Supported |
 | Certificate-chain policy verification | Supported |
 | Cached or online revocation checks | Supported |
-| x86 and x64 release binaries | Included in `dist/` |
+| x86 and x64 release binaries | Available from [GitHub Releases](https://github.com/leeqwind/PESignAnalyzer/releases) |
 
-The release binaries have been checked to import only `kernel32.dll`,
-`crypt32.dll`, and `advapi32.dll`.
+The native analyzer links Windows CryptoAPI and a static MSVC runtime; it does
+not require OpenSSL or curl. Download `PESignAnalyzer-<tag>-windows-x64.zip` or
+`PESignAnalyzer-<tag>-windows-x86.zip` and extract it before running the examples
+below. The separate `PESignAnalyzerOpenSSL-*` packages contain the cross-platform implementation.
 
 ## How verification works
 
@@ -83,27 +85,27 @@ Options:
 The original metadata-only invocation remains supported:
 
 ```powershell
-.\dist\bin_x64.exe "C:\Program Files\Git\cmd\git.exe"
+.\PESignAnalyzer.exe "C:\Program Files\Git\cmd\git.exe"
 ```
 
 Verify an embedded signature:
 
 ```powershell
-.\dist\bin_x64.exe --verify `
+.\PESignAnalyzer.exe --verify `
   "C:\Program Files\Git\cmd\git.exe"
 ```
 
 Automatically discover and verify the Catalog for a system file:
 
 ```powershell
-.\dist\bin_x64.exe --verify `
+.\PESignAnalyzer.exe --verify `
   "C:\Windows\System32\notepad.exe"
 ```
 
 Specify a Catalog explicitly:
 
 ```powershell
-.\dist\bin_x64.exe --verify `
+.\PESignAnalyzer.exe --verify `
   --catalog "C:\Windows\System32\CatRoot\{GUID}\package.cat" `
   "C:\Windows\System32\notepad.exe"
 ```
@@ -111,7 +113,7 @@ Specify a Catalog explicitly:
 Enable online revocation checks (`--revocation` implies `--verify`):
 
 ```powershell
-.\dist\bin_x64.exe --revocation online `
+.\PESignAnalyzer.exe --revocation online `
   "C:\Windows\System32\notepad.exe"
 ```
 
@@ -144,18 +146,15 @@ as equivalent to `valid` in a strict security policy.
 
 ## Building
 
-The preferred build entry point is CMake. The following commands reproduce the
-two release binaries shipped in `dist/` from a Visual Studio Developer Command
-Prompt:
+The preferred build entry point is CMake. Build both native Windows architectures
+from a Visual Studio Developer Command Prompt:
 
 ```cmd
 cmake -S . -B .build\cmake-x64 -A x64
 cmake --build .build\cmake-x64 --config Release --parallel
-copy /Y .build\cmake-x64\Release\PESignAnalyzer.exe dist\bin_x64.exe
 
 cmake -S . -B .build\cmake-x86 -A Win32
 cmake --build .build\cmake-x86 --config Release --parallel
-copy /Y .build\cmake-x86\Release\PESignAnalyzer.exe dist\bin_x86.exe
 ```
 
 Legacy Visual C++ project files remain available under `msvc/`:
@@ -177,13 +176,23 @@ for the module map and ownership boundaries.
 Both build systems link `Crypt32.lib` and `Advapi32.lib`. `Wintrust.lib` is
 neither required nor linked.
 
+## Release publishing
+
+Pushing a new `v*` tag runs `.github/workflows/release.yml`. To rebuild an existing
+tag, open Actions → Release analyzers → Run workflow, select `master`, and enter
+the tag, or run `gh workflow run release.yml --ref master -f tag=v1.3.0`.
+Both native Windows architectures and all four OpenSSL builds must pass before
+the six archives and their SHA-256 files are uploaded to the Release. Native
+archives also run the smoke suite after extraction. Build provenance is recorded
+in `BUILD-INFO.json`; no release binaries are stored in the source tree.
+
 ## Tests
 
-Run the smoke suite against either packaged architecture:
+Run the smoke suite against either build:
 
 ```powershell
-.\tests\smoke.ps1 -Executable .\dist\bin_x64.exe
-.\tests\smoke.ps1 -Executable .\dist\bin_x86.exe
+.\tests\smoke.ps1 -Executable .\.build\cmake-x64\Release\PESignAnalyzer.exe
+.\tests\smoke.ps1 -Executable .\.build\cmake-x86\Release\PESignAnalyzer.exe
 ```
 
 The suite covers command-line behavior, embedded verification, tamper

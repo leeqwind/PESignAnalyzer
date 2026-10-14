@@ -31,10 +31,11 @@ PESignAnalyzer 是一个用于分析和验证 Windows PE 文件 Authenticode 签
 | 旧式 PKCS#9 countersignature | 已支持 |
 | 证书链策略验证 | 已支持 |
 | 缓存或在线吊销检查 | 已支持 |
-| x86、x64 发布二进制 | 已包含在 `dist/` 中 |
+| x86、x64 发布二进制 | 从 [GitHub Releases](https://github.com/leeqwind/PESignAnalyzer/releases) 下载 |
 
-发布二进制已经检查，导入表中只有 `kernel32.dll`、`crypt32.dll` 和
-`advapi32.dll`。
+原生版本使用 Windows CryptoAPI，静态链接 MSVC 运行库，无需 OpenSSL 或 curl。
+下载 `PESignAnalyzer-<tag>-windows-x64.zip` 或 `PESignAnalyzer-<tag>-windows-x86.zip`，
+解压后即可运行下方示例。`PESignAnalyzerOpenSSL-*` 是独立的跨平台实现。
 
 ## 验证原理
 
@@ -73,27 +74,27 @@ Options:
 原有的仅分析元数据调用方式保持兼容：
 
 ```powershell
-.\dist\bin_x64.exe "C:\Program Files\Git\cmd\git.exe"
+.\PESignAnalyzer.exe "C:\Program Files\Git\cmd\git.exe"
 ```
 
 验证嵌入式签名：
 
 ```powershell
-.\dist\bin_x64.exe --verify `
+.\PESignAnalyzer.exe --verify `
   "C:\Program Files\Git\cmd\git.exe"
 ```
 
 自动查找并验证系统文件对应的 Catalog：
 
 ```powershell
-.\dist\bin_x64.exe --verify `
+.\PESignAnalyzer.exe --verify `
   "C:\Windows\System32\notepad.exe"
 ```
 
 显式指定 Catalog：
 
 ```powershell
-.\dist\bin_x64.exe --verify `
+.\PESignAnalyzer.exe --verify `
   --catalog "C:\Windows\System32\CatRoot\{GUID}\package.cat" `
   "C:\Windows\System32\notepad.exe"
 ```
@@ -101,7 +102,7 @@ Options:
 启用在线吊销检查（`--revocation` 隐含启用 `--verify`）：
 
 ```powershell
-.\dist\bin_x64.exe --revocation online `
+.\PESignAnalyzer.exe --revocation online `
   "C:\Windows\System32\notepad.exe"
 ```
 
@@ -134,16 +135,14 @@ Options:
 ## 编译
 
 推荐使用 CMake 作为统一构建入口。以下命令可在 Visual Studio 开发人员命令
-提示符中重新生成 `dist/` 内发布的两个可执行文件：
+提示符中构建原生 Windows 版本的两个架构：
 
 ```cmd
 cmake -S . -B .build\cmake-x64 -A x64
 cmake --build .build\cmake-x64 --config Release --parallel
-copy /Y .build\cmake-x64\Release\PESignAnalyzer.exe dist\bin_x64.exe
 
 cmake -S . -B .build\cmake-x86 -A Win32
 cmake --build .build\cmake-x86 --config Release --parallel
-copy /Y .build\cmake-x86\Release\PESignAnalyzer.exe dist\bin_x86.exe
 ```
 
 仓库仍在 `msvc/` 目录保留旧版 Visual C++ 工程文件：
@@ -162,13 +161,22 @@ MSBuild msvc\vs2015.vcxproj /p:Configuration=Release /p:Platform=Win32
 与依赖边界详见 [docs/architecture.md](docs/architecture.md)。两套构建系统都会链接
 `Crypt32.lib` 和 `Advapi32.lib`，不需要、也不会链接 `Wintrust.lib`。
 
+## 发布
+
+推送新的 `v*` tag 会运行 `.github/workflows/release.yml`。重建已有 tag 时，在
+Actions → Release analyzers → Run workflow 中选择 `master` 并填写 tag，或执行
+`gh workflow run release.yml --ref master -f tag=v1.3.0`。
+原生 Windows 两个架构及 OpenSSL 四个平台全部通过后，才会上传六个压缩包和
+各自的 SHA-256 校验文件。原生包还会在解压后再次运行冒烟测试。
+包内 `BUILD-INFO.json` 记录源码信息，仓库不再存放发布二进制。
+
 ## 测试
 
-可以分别对 `dist/` 中的两个发布架构运行冒烟测试：
+可以分别对两个构建架构运行冒烟测试：
 
 ```powershell
-.\tests\smoke.ps1 -Executable .\dist\bin_x64.exe
-.\tests\smoke.ps1 -Executable .\dist\bin_x86.exe
+.\tests\smoke.ps1 -Executable .\.build\cmake-x64\Release\PESignAnalyzer.exe
+.\tests\smoke.ps1 -Executable .\.build\cmake-x86\Release\PESignAnalyzer.exe
 ```
 
 测试覆盖命令行行为、嵌入式签名验证、篡改检测、Catalog 自动查找、Catalog

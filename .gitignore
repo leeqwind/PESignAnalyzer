@@ -1,7 +1,6 @@
-# The original Windows CryptoAPI release executables stay under dist/.
-# OpenSSL build outputs and packages are local generated artifacts.
-/dist/openssl/
-/dist/PESignAnalyzerOpenSSL-*.zip
+# Release binaries are distributed through GitHub Releases, not source control.
+/dist/
+/packages/
 
 # CMake build trees and generated metadata
 .build/

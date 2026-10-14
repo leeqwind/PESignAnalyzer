@@ -1,4 +1,4 @@
-"""Package a tagged OpenSSL analyzer and smoke-test its extracted archive."""
+"""Package a tagged analyzer and smoke-test its extracted archive."""
 
 import argparse
 import hashlib
@@ -22,6 +22,7 @@ def main():
     parser.add_argument('--source', type=Path, required=True)
     parser.add_argument('--build', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--variant', choices=('openssl', 'native'), default='openssl')
     args = parser.parse_args()
     source, build, output = (p.resolve() for p in (args.source, args.build, args.output))
     tag = os.environ['RELEASE_TAG']
@@ -31,11 +32,16 @@ def main():
         raise ValueError('Invalid version tag')
     if platform not in ('windows-x64', 'windows-x86', 'linux-x64', 'macos-arm64'):
         raise ValueError('Unknown package platform')
-    version = re.search(r'project\(PESignAnalyzerOpenSSL VERSION ([0-9.]+)',
-                        (source / 'openssl/CMakeLists.txt').read_text()).group(1)
-    name = f'PESignAnalyzerOpenSSL-{tag}-{platform}'
+    native = args.variant == 'native'
+    if native and not platform.startswith('windows-'):
+        raise ValueError('The native CryptoAPI analyzer requires Windows')
+    product = 'PESignAnalyzer' if native else 'PESignAnalyzerOpenSSL'
+    project = source if native else source / 'openssl'
+    version = re.search(rf'project\({product} VERSION ([0-9.]+)',
+                        (project / 'CMakeLists.txt').read_text()).group(1)
+    name = f'{product}-{tag}-{platform}'
     windows = platform.startswith('windows-')
-    executable = 'PESignAnalyzerOpenSSL.exe' if windows else 'PESignAnalyzerOpenSSL'
+    executable = product + ('.exe' if windows else '')
     binary = build / 'Release' / executable if windows else build / executable
     output.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory() as temp:
@@ -43,8 +49,14 @@ def main():
         root.mkdir()
         shutil.copy2(binary, root / executable)
         shutil.copy2(source / 'LICENSE', root / 'LICENSE')
-        shutil.copy2(source / 'openssl/README.md', root / 'README.zh.md')
-        if windows:
+        if native:
+            shutil.copy2(source / 'README.md', root / 'README.md')
+            shutil.copy2(source / 'README.zh.md', root / 'README.zh.md')
+            requirements = ('Windows x64/x86 as named. Native Windows CryptoAPI analyzer; '
+                            'MSVC runtime statically linked. No OpenSSL or curl required.')
+        else:
+            shutil.copy2(project / 'README.md', root / 'README.zh.md')
+        if windows and not native:
             # vcpkg static triplets and /MT avoid external DLL/VC Runtime requirements.
             share = Path(os.environ['VCPKG_INSTALLATION_ROOT']) / 'installed' / os.environ['VCPKG_TRIPLET'] / 'share'
             for license_file in share.glob('*/copyright'):
@@ -74,18 +86,21 @@ def main():
                 if '/opt/homebrew/' in dependencies or '/usr/local/' in dependencies:
                     raise RuntimeError(f'Unbundled Homebrew dependency: {dependencies}')
             requirements = 'macOS 15+ arm64 (Apple Silicon). Non-system dylibs included. Ad-hoc signed, not notarized.'
-        else:
+        elif not windows:
             requirements = ('Linux x64, Ubuntu 24.04+ (glibc 2.39+). Install runtime dependencies:\n'
                             '  sudo apt-get install libssl3t64 libcurl4t64 ca-certificates\n'
                             'OpenSSL/libcurl use system packages and are not bundled.')
-        metadata = {'tag': tag, 'commit': commit, 'openssl_analyzer_version': version,
+        metadata = {'tag': tag, 'commit': commit, 'product': product, 'analyzer_version': version,
                     'platform': platform, 'requirements': requirements}
+        if not native:
+            metadata['openssl_analyzer_version'] = version
         (root / 'BUILD-INFO.json').write_text(json.dumps(metadata, indent=2) + '\n', encoding='utf-8')
         (root / 'README.txt').write_text(
-            f'PESignAnalyzerOpenSSL {version}\nRelease: {tag}\nSource commit: {commit}\n\n'
+            f'{product} {version}\nRelease: {tag}\nSource commit: {commit}\n\n'
             f'{requirements}\n\nExtract the whole archive, then run:\n'
             f'  {executable if windows else "./" + executable} --help\n'
-            '  PESignAnalyzerOpenSSL --json sample.exe\n\n'
+            f'  {executable if windows else "./" + executable} '
+            f'{"--verify" if native else "--json"} sample.exe\n\n'
             'See README.zh.md for usage and LICENSE / licenses for licensing.\n', encoding='utf-8')
         if windows:
             archive = output / f'{name}.zip'
@@ -109,6 +124,9 @@ def main():
         reported_version = run(str(installed), '--version')
         if version not in reported_version:
             raise RuntimeError(f'Unexpected packaged version: {reported_version}')
+        if native:
+            run(shutil.which('pwsh') or 'powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass',
+                '-File', str(source / 'tests/smoke.ps1'), '-Executable', str(installed))
         digest = hashlib.sha256(archive.read_bytes()).hexdigest()
         archive.with_name(archive.name + '.sha256').write_text(f'{digest}  {archive.name}\n', encoding='ascii')
         print(f'Packaged and tested {archive.name}: {reported_version}')

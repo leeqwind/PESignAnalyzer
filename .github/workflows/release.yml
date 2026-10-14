@@ -1,4 +1,4 @@
-name: Release OpenSSL analyzer
+name: Release analyzers
 
 on:
   push:
@@ -111,8 +111,52 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  build-native:
+    needs: resolve
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-x64
+            architecture: x64
+          - platform: windows-x86
+            architecture: Win32
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          path: tooling
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve.outputs.commit }}
+          path: source
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Configure native CryptoAPI analyzer
+        run: cmake -S source -B build/native -A ${{ matrix.architecture }}
+      - name: Build native analyzer
+        run: cmake --build build/native --config Release --parallel
+      - name: Test native analyzer
+        run: ctest --test-dir build/native -C Release --output-on-failure
+      - name: Package and test extracted native archive
+        env:
+          RELEASE_TAG: ${{ needs.resolve.outputs.tag }}
+          SOURCE_COMMIT: ${{ needs.resolve.outputs.commit }}
+          PACKAGE_PLATFORM: ${{ matrix.platform }}
+        run: python tooling/.github/scripts/package-release.py --variant native --source source --build build/native --output packages
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-native-${{ matrix.platform }}
+          path: packages/*
+          if-no-files-found: error
+          retention-days: 14
+
   publish:
-    needs: [resolve, build]
+    needs: [resolve, build, build-native]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -132,7 +176,7 @@ jobs:
         run: |
           set -euo pipefail
           cd packages
-          test "$(find . -maxdepth 1 -name '*.sha256' | wc -l)" -eq 4
+          test "$(find . -maxdepth 1 -name '*.sha256' | wc -l)" -eq 6
           sha256sum --check -- *.sha256
           # Refuse to publish if the remote tag moved during the build.
           ref=$(gh api "repos/$GH_REPO/git/ref/tags/$RELEASE_TAG" --jq '.object.sha + " " + .object.type')
@@ -143,7 +187,7 @@ jobs:
           done
           test "$kind" = commit && test "$sha" = "$SOURCE_COMMIT"
           if ! gh release view "$RELEASE_TAG" > /dev/null 2>&1; then
-            printf 'OpenSSL analyzer built from `%s` (%s).\n\nWindows x64/x86, Linux x64 (Ubuntu 24.04+), macOS arm64 (macOS 15+).\nLinux requires libssl3t64 and libcurl4t64; Windows includes static dependencies; macOS includes non-system dylibs.\nSee README.txt and BUILD-INFO.json in each archive.\n' "$RELEASE_TAG" "$SOURCE_COMMIT" > ../release-notes.md
+            printf 'Analyzers built from `%s` (%s).\n\nPESignAnalyzer: native Windows CryptoAPI, Windows x64/x86, no OpenSSL or curl required.\nPESignAnalyzerOpenSSL: Windows x64/x86, Linux x64 (Ubuntu 24.04+), macOS arm64 (macOS 15+).\nLinux requires libssl3t64 and libcurl4t64; Windows uses a static MSVC runtime; macOS includes non-system dylibs.\nSee README.txt and BUILD-INFO.json in each archive.\n' "$RELEASE_TAG" "$SOURCE_COMMIT" > ../release-notes.md
             gh release create "$RELEASE_TAG" --verify-tag --draft --title "$RELEASE_TAG" --notes-file ../release-notes.md
           fi
           gh release upload "$RELEASE_TAG" ./*.zip ./*.tar.gz ./*.sha256 --clobber

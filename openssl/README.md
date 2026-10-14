@@ -4,8 +4,8 @@
 使用 C++17、OpenSSL libcrypto 和 libcurl，目标平台为 Windows、Linux、macOS。
 输入为 Windows PE 文件（exe、dll、sys 等），不需要在 Windows 上运行。
 
-本目录使用独立 CMake 入口。根目录 Windows CryptoAPI 版本及 dist 发布文件保留
-原构建方式；本目录不调用 WinTrust 或 CryptCATAdmin。
+本目录使用独立 CMake 入口，根目录 Windows CryptoAPI 版本保留独立构建方式。
+两套实现的运行包均通过 GitHub Releases 分发；本目录不调用 WinTrust 或 CryptCATAdmin。
 
 ## 功能
 
@@ -72,7 +72,7 @@ ctest --test-dir .build/openssl-windows -C Release --output-on-failure
 32 位 Windows 可使用 x86-windows triplet 和 -A Win32；两种架构均解析 PE32/PE32+。
 本机 Windows x64 Release 运行包位于 .build/openssl-native/package/windows-x64，包含程序及所需 DLL；
 解压后保留同目录 DLL 即可运行。当前包使用静态 MSVC 运行库，无需单独安装 VC Runtime。
-OpenSSL 编译输出及压缩包仅放在 Git 忽略的 .build 下，不持久化到 dist 或纳入版本控制。
+本地编译输出及压缩包放在 Git 忽略的 .build 下，不纳入版本控制。
 Windows 链接 Crypt32，macOS 链接 Security/CoreFoundation 读取系统信任来源；
 验签和构链均由 OpenSSL 执行。使用 -DBUILD_TESTING=OFF 关闭测试，
 或 cmake --install <build-dir> --prefix <目录> 安装。
@@ -80,7 +80,7 @@ Windows 链接 Crypt32，macOS 链接 Security/CoreFoundation 读取系统信任
 ## GitHub Release 发布
 
 `.github/workflows/release.yml` 独立执行发布构建。推送新的 `v*` 版本 tag 会自动发布；
-已有 tag 可在 Actions → Release OpenSSL analyzer → Run workflow 中选择 `master`，
+已有 tag 可在 Actions → Release analyzers → Run workflow 中选择 `master`，
 在 `tag` 输入框填写已有 tag（例如 `v1.3.0`）。GitHub 的手动输入框不提供动态 tag 下拉列表。
 也可使用命令：
 
@@ -89,7 +89,8 @@ gh workflow run release.yml --ref master -f tag=v1.3.0
 ```
 
 发布工具使用所选工作流版本，产品源码严格使用 tag 对应的提交，因此不必移动旧 tag。
-四个平台全部构建、测试及解压后 CLI 冒烟检查通过，才会创建 Release 并上传附件：
+OpenSSL 四个平台和原生 Windows 两个架构全部构建、测试及解压后冒烟检查通过，
+才会创建 Release 并上传附件。OpenSSL 包如下：
 
 | 包 | 运行要求 |
 |---|---|
@@ -99,6 +100,8 @@ gh workflow run release.yml --ref master -f tag=v1.3.0
 | `PESignAnalyzerOpenSSL-<tag>-macos-arm64.tar.gz` | macOS 15+、Apple Silicon；附带非系统 dylib，使用 ad-hoc 签名，未经公证 |
 
 这些是解压运行包；当前不生成 MSI/DMG，也不包含 macOS Intel 或 Linux arm64。
+同一 Release 中的 `PESignAnalyzer-<tag>-windows-x64.zip` 和
+`PESignAnalyzer-<tag>-windows-x86.zip` 是原生 Windows CryptoAPI 版本，无需 OpenSSL 或 curl。
 附件提供独立的 `.sha256` 校验文件，包内 `BUILD-INFO.json` 记录 tag、源码提交、平台及
 OpenSSL 子项目版本。仓库 tag 与 OpenSSL 子项目版本独立，例如 `v1.3.0` 中子项目仍为 `0.2.2`。
 安装包也会保存在该次 Actions 的 artifacts 中，保留 14 天。
